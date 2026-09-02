@@ -6,8 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class EnterpriseIssuesTrackingSystemApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(EnterpriseIssuesTrackingSystemApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(EnterpriseIssuesTrackingSystemApplication.class, args);
+    }
 
 }
