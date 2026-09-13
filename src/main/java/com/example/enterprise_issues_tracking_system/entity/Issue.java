@@ -48,9 +48,9 @@ public class Issue extends Auditable {
     @JoinColumn(name = "project_id")
     private Project project;
 
-    @OneToMany
+    @ManyToOne
     @JoinColumn(name = "assignee_id")
-    private List<User> assignee;
+    private User assignee;
 
     @ManyToOne
     @JoinColumn(name = "reporter_id")
