@@ -9,10 +9,9 @@ import com.example.enterprise_issues_tracking_system.mapper.CommentMapper;
 import com.example.enterprise_issues_tracking_system.repository.CommentRepository;
 import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
-import com.example.enterprise_issues_tracking_system.security.UserPrincipal;
+import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -28,10 +27,10 @@ public class CommentService {
     private final CommentRepository commentRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final IssueRepository issueRepository;
+    private final CurrentUserProvider currentUserProvider;
 
     private void IsAMember(Long issueId) {
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Long callerId = userPrincipal.getUser().getId();
+        Long callerId = currentUserProvider.getCurrentUser().getId();
         Issue issue = issueRepository.findByIdAndDeletedAtIsNull(issueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Issue ID not found"));
         Long projectId = issue.getProject().getId();
@@ -40,8 +39,7 @@ public class CommentService {
     }
 
     private boolean IsAuthor(Long authorId) {
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Long callerId = userPrincipal.getUser().getId();
+        Long callerId = currentUserProvider.getCurrentUser().getId();
         return Objects.equals(callerId, authorId);
     }
 
@@ -49,8 +47,7 @@ public class CommentService {
         Issue issue = issueRepository.findByIdAndDeletedAtIsNull(request.getIssueId())
                         .orElseThrow(() -> new ResourceNotFoundException("Issue ID not found"));
         IsAMember(issue.getId());
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        User caller = userPrincipal.getUser();
+        User caller = currentUserProvider.getCurrentUser();
         Comment comment = commentMapper.toEntity(request);
         comment.setAuthor(caller);
         commentRepository.save(comment);
@@ -93,8 +90,7 @@ public class CommentService {
     public void deleteComment(Long id) {
         Comment comment = commentRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Comment ID not found"));
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Long callerId = userPrincipal.getUser().getId();
+        Long callerId = currentUserProvider.getCurrentUser().getId();
         Long projectId = comment.getIssue().getProject().getId();
         boolean isAdminOrManager = projectMemberRepository.findMembership(projectId, callerId)
                 .map(pm -> List.of(Role.ADMIN, Role.PROJECT_MANAGER).contains(pm.getRole()))

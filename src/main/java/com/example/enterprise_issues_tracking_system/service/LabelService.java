@@ -12,10 +12,9 @@ import com.example.enterprise_issues_tracking_system.mapper.LabelMapper;
 import com.example.enterprise_issues_tracking_system.repository.LabelRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
-import com.example.enterprise_issues_tracking_system.security.UserPrincipal;
+import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -28,17 +27,16 @@ public class LabelService {
     private final LabelRepository labelRepository;
     private final ProjectRepository projectRepository;
     private final ProjectMemberRepository projectMemberRepository;
+    private final CurrentUserProvider currentUserProvider;
 
     private void IsAMember(Long projectId) {
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Long callerId = userPrincipal.getUser().getId();
+        Long callerId = currentUserProvider.getCurrentUser().getId();
         ProjectMember projectMember = projectMemberRepository.findMembership(projectId, callerId)
                 .orElseThrow(() -> new AccessDeniedException("You are not allowed to do this"));
     }
 
     private void IsAdminOrManager(Long projectId) {
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Long callerId = userPrincipal.getUser().getId();
+        Long callerId = currentUserProvider.getCurrentUser().getId();
         ProjectMember projectMember = projectMemberRepository.findMembership(projectId, callerId)
                 .orElseThrow(() -> new AccessDeniedException("You are not allowed to do this"));
         if (!List.of(Role.ADMIN, Role.PROJECT_MANAGER).contains(projectMember.getRole())) {

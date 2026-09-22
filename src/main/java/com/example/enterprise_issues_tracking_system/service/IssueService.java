@@ -9,12 +9,11 @@ import com.example.enterprise_issues_tracking_system.mapper.IssueMapper;
 import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
-import com.example.enterprise_issues_tracking_system.security.UserPrincipal;
+import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -28,17 +27,16 @@ public class IssueService {
     private final IssueRepository issueRepository;
     private final ProjectRepository projectRepository;
     private final IssueMapper issueMapper;
+    private final CurrentUserProvider currentUserProvider;
 
     private void checkCallerHasRole(Long projectId) {
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Long callerId = userPrincipal.getUser().getId();
+        Long callerId = currentUserProvider.getCurrentUser().getId();
         ProjectMember projectMember = projectMemberRepository.findMembership(projectId, callerId)
                 .orElseThrow(() -> new AccessDeniedException("You are not allowed to do this"));
     }
 
     private boolean hasRole(Long projectId, Role... roles) {
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Long callerId = userPrincipal.getUser().getId();
+        Long callerId = currentUserProvider.getCurrentUser().getId();
         return projectMemberRepository.findMembership(projectId, callerId)
                 .map(pm -> List.of(roles).contains(pm.getRole()))
                 .orElse(false);
@@ -74,8 +72,7 @@ public class IssueService {
     public IssueResponse updateIssue(Long id, IssueUpdateRequest request) {
         Issue existingIssue = issueRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Issue ID not found"));
-        UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Long callerId = userPrincipal.getUser().getId();
+        Long callerId = currentUserProvider.getCurrentUser().getId();
         boolean restrictedFieldsUnchanged = Objects.equals(request.getAssigneeId(), existingIssue.getAssignee() != null ? existingIssue.getAssignee().getId() : null)
                 && Objects.equals(request.getReporterId(), existingIssue.getReporter().getId())
                 && Objects.equals(request.getProjectId(), existingIssue.getProject().getId())
