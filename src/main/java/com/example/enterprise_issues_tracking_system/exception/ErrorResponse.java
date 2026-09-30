@@ -20,4 +20,5 @@ public class ErrorResponse {
     private String error;
     private String message;
     private List<String> errors;
+    private String path;
 }

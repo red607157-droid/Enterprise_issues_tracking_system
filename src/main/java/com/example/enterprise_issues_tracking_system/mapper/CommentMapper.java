@@ -17,16 +17,14 @@ public class CommentMapper {
         Issue issue = new Issue();
         issue.setId(request.getIssueId());
 
-        Comment parentComment = null;
-        if (request.getParentCommentId() != null) {
-            parentComment = new Comment();
-            parentComment.setId(request.getParentCommentId());
-        }
-
         Comment comment = new Comment();
+        if (request.getParentCommentId() != null) {
+            Comment parentComment = new Comment();
+            parentComment.setId(request.getParentCommentId());
+            comment.setParentComment(parentComment);
+        }
         comment.setBody(request.getBody());
         comment.setIssue(issue);
-        comment.setParentComment(parentComment);
         comment.setCreatedAt(LocalDateTime.now());
 
         return comment;

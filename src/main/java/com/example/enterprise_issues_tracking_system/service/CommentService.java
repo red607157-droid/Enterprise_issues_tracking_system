@@ -66,7 +66,7 @@ public class CommentService {
         List<Comment> allComment = commentRepository.findAllByIssueId(issueId);
         Set<Long> allParentCommentId = new HashSet<>();
         for (Comment comment : allComment) {
-            if (comment.getParentComment().getId() != null) {
+            if (comment.getParentComment() != null && comment.getParentComment().getId() != null) {
                 allParentCommentId.add(comment.getParentComment().getId());
             }
         }

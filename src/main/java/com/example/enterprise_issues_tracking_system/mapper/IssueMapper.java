@@ -8,6 +8,7 @@ import com.example.enterprise_issues_tracking_system.entity.Project;
 import com.example.enterprise_issues_tracking_system.entity.User;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.Objects;
 
 @Component
@@ -68,6 +69,7 @@ public class IssueMapper {
         existingIssue.setIssuePriority(request.getIssuePriority());
         existingIssue.setDueDate(request.getDueDate());
         existingIssue.setIssueStatus(request.getIssueStatus());
+        existingIssue.setUpdatedAt(LocalDateTime.now());
 
         return existingIssue;
     }
@@ -85,6 +87,7 @@ public class IssueMapper {
         response.setTitle(issue.getTitle());
         response.setDueDate(issue.getDueDate());
         response.setAssigneeId(issue.getAssignee() != null ? issue.getAssignee().getId() : null);
+        response.setReporterId(issue.getReporter().getId());
         response.setCreatedAt(issue.getCreatedAt());
 
         return response;
