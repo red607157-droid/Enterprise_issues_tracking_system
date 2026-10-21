@@ -31,9 +31,6 @@ public class IssueUpdateRequest {
 
     private Long assigneeId;
 
-    @NotNull(message = "Issue reporter is required")
-    private Long reporterId;
-
     @NotNull(message = "Issue detected date is required")
     private LocalDateTime dueDate;
 

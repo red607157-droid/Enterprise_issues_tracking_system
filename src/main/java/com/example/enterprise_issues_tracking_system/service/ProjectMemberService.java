@@ -73,6 +73,8 @@ public class ProjectMemberService {
     }
 
     private void checkCallerHasRole(Long projectId, Role... allowedRoles) {
+        projectRepository.findByIdAndDeletedAtIsNull(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project ID not found"));
         UserPrincipal userPrincipal = (UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         Long callerId = userPrincipal.getUser().getId();
         ProjectMember projectMember = projectMemberRepository.findMembership(projectId, callerId)

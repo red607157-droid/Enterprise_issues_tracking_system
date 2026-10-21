@@ -4,6 +4,7 @@ import com.example.enterprise_issues_tracking_system.dto.IssueRequest;
 import com.example.enterprise_issues_tracking_system.dto.IssueResponse;
 import com.example.enterprise_issues_tracking_system.dto.IssueUpdateRequest;
 import com.example.enterprise_issues_tracking_system.entity.*;
+import com.example.enterprise_issues_tracking_system.exception.ImmutableFieldException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.IssueMapper;
 import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
@@ -312,7 +313,6 @@ class IssueServiceTest {
         existingIssue.setIssuePriority(IssuePriority.CRITICAL);
         IssueUpdateRequest request = new IssueUpdateRequest();
         request.setAssigneeId(callerId);
-        request.setReporterId(reporterId);
         request.setProjectId(projectId);
         request.setDueDate(dueDate);
         request.setIssuePriority(IssuePriority.LOW);
@@ -343,30 +343,30 @@ class IssueServiceTest {
     }
 
     @Test
-    public void updateIssue_whenAssigneeViolateRestrictedFields_shouldThrowException() {
+    public void updateIssue_whenAssigneeChangesDueDate_shouldThrowException() {
         Long projectId = 3L;
         Project project = new Project();
         project.setId(projectId);
         Long callerId = 2L;
         User caller = new User();
         caller.setId(callerId);
-        User assignee = new User();
-        assignee.setId(callerId);
+        LocalDateTime dueDate = LocalDateTime.now();
         Long existingIssueId = 1L;
         Issue existingIssue = new Issue();
         existingIssue.setId(existingIssueId);
         existingIssue.setProject(project);
-        existingIssue.setAssignee(assignee);
+        existingIssue.setAssignee(caller);
+        existingIssue.setDueDate(dueDate);
         IssueUpdateRequest request = new IssueUpdateRequest();
-        request.setProjectId(4L);
+        request.setProjectId(projectId);
         request.setAssigneeId(callerId);
+        request.setDueDate(dueDate.plusDays(1));
 
         when(issueRepository.findByIdAndDeletedAtIsNull(existingIssueId)).thenReturn(Optional.of(existingIssue));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
 
         assertThrows(AccessDeniedException.class, () -> issueService.updateIssue(existingIssueId, request));
-        verify(issueRepository).findByIdAndDeletedAtIsNull(existingIssueId);
         verify(issueRepository, never()).save(any());
     }
 
@@ -416,6 +416,55 @@ class IssueServiceTest {
 
         assertThrows(AccessDeniedException.class, () -> issueService.updateIssue(existingIssueId, request));
         verify(issueRepository).findByIdAndDeletedAtIsNull(existingIssueId);
+        verify(issueRepository, never()).save(any());
+    }
+
+    @Test
+    public void updateIssue_whenProjectChanged_shouldThrowExceptionEvenForAdmin() {
+        Long projectId = 3L;
+        Project project = new Project();
+        project.setId(projectId);
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+        Long existingIssueId = 1L;
+        Issue existingIssue = new Issue();
+        existingIssue.setId(existingIssueId);
+        existingIssue.setProject(project);
+        IssueUpdateRequest request = new IssueUpdateRequest();
+        request.setProjectId(4L);
+
+        when(issueRepository.findByIdAndDeletedAtIsNull(existingIssueId)).thenReturn(Optional.of(existingIssue));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.ADMIN)));
+
+        assertThrows(ImmutableFieldException.class, () -> issueService.updateIssue(existingIssueId, request));
+        verify(issueRepository, never()).save(any());
+    }
+
+    @Test
+    public void updateIssue_whenManagerAssignsNonMember_shouldThrowException() {
+        Long projectId = 3L;
+        Project project = new Project();
+        project.setId(projectId);
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+        Long newAssigneeId = 5L;
+        Long existingIssueId = 1L;
+        Issue existingIssue = new Issue();
+        existingIssue.setId(existingIssueId);
+        existingIssue.setProject(project);
+        IssueUpdateRequest request = new IssueUpdateRequest();
+        request.setProjectId(projectId);
+        request.setAssigneeId(newAssigneeId);
+
+        when(issueRepository.findByIdAndDeletedAtIsNull(existingIssueId)).thenReturn(Optional.of(existingIssue));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.PROJECT_MANAGER)));
+        when(projectMemberRepository.findMembership(projectId, newAssigneeId)).thenReturn(Optional.empty());
+
+        assertThrows(AccessDeniedException.class, () -> issueService.updateIssue(existingIssueId, request));
         verify(issueRepository, never()).save(any());
     }
 

@@ -25,9 +25,6 @@ public class IssueMapper {
             assignee.setId(request.getAssigneeId());
         }
 
-        User reporter = new User();
-        reporter.setId(request.getReporterId());
-
         Issue issue = new Issue();
         issue.setDescription(request.getDescription());
         issue.setProject(project);
@@ -35,7 +32,6 @@ public class IssueMapper {
         issue.setType(request.getType());
         issue.setIssuePriority(request.getIssuePriority());
         issue.setAssignee(assignee);
-        issue.setReporter(reporter);
         issue.setDueDate(request.getDueDate());
 
         return issue;
@@ -47,11 +43,7 @@ public class IssueMapper {
             project.setId(request.getProjectId());
             existingIssue.setProject(project);
         }
-        if (!Objects.equals(request.getReporterId(), existingIssue.getReporter().getId())) {
-            User reporter = new User();
-            reporter.setId(request.getReporterId());
-            existingIssue.setReporter(reporter);
-        }
+
         Long currentAssigneeId = existingIssue.getAssignee() != null ? existingIssue.getAssignee().getId() : null;
         if (!Objects.equals(request.getAssigneeId(), currentAssigneeId)) {
             if (request.getAssigneeId() == null) {

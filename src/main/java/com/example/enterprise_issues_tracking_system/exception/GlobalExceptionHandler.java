@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
@@ -79,6 +80,23 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException exception, HttpServletRequest request) {
         String message = "Parameter '" + exception.getName() + "' has invalid value: " + exception.getValue();
         return build(HttpStatus.BAD_REQUEST, message, request, null);
+    }
+
+    @ExceptionHandler(InvalidFileException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidFile(
+            InvalidFileException exception, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(
+            MaxUploadSizeExceededException exception, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "Uploaded file exceeds the maximum allowed size", request, null);
+    }
+
+    @ExceptionHandler(ImmutableFieldException.class)
+    public ResponseEntity<ErrorResponse> handleImmutableField(Exception exception, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, exception.getMessage(), request, null);
     }
 
     @ExceptionHandler(Exception.class)
