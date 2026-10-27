@@ -4,6 +4,8 @@ import com.example.enterprise_issues_tracking_system.dto.ProjectRequest;
 import com.example.enterprise_issues_tracking_system.dto.ProjectResponse;
 import com.example.enterprise_issues_tracking_system.entity.Project;
 import com.example.enterprise_issues_tracking_system.entity.User;
+import com.example.enterprise_issues_tracking_system.exception.DuplicateResourceException;
+import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.ProjectMapper;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
@@ -22,7 +24,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,9 +31,6 @@ class ProjectServiceTest {
 
     @Mock
     private CurrentUserProvider currentUserProvider;
-
-    @InjectMocks
-    private ProjectService projectService;
 
     @Mock
     private ProjectRepository projectRepository;
@@ -43,48 +41,63 @@ class ProjectServiceTest {
     @Mock
     private ProjectMemberService projectMemberService;
 
+    @InjectMocks
+    private ProjectService projectService;
+
+    private User buildUser(Long id) {
+        User user = new User();
+        user.setId(id);
+        return user;
+    }
+
     @Test
-    public void getProjectById_whenProjectExists_shouldRespond() {
+    public void getProjectById_whenVisible_shouldRespond() {
         Long id = 1L;
+        User caller = buildUser(2L);
         Project project = new Project();
         project.setId(id);
-        when(projectRepository.findByIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(project));
+        ProjectResponse expected = new ProjectResponse();
+        expected.setId(id);
 
-        ProjectResponse expectedResponse = new ProjectResponse();
-        expectedResponse.setId(id);
-        when(projectMapper.toResponse(project)).thenReturn(expectedResponse);
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectRepository.findVisibleById(id, 2L)).thenReturn(Optional.of(project));
+        when(projectMapper.toResponse(project)).thenReturn(expected);
+
         ProjectResponse result = projectService.getProjectById(id);
 
-        assertEquals(expectedResponse, result);
-        verify(projectRepository).findByIdAndDeletedAtIsNull(id);
+        assertEquals(expected, result);
+        verify(projectRepository).findVisibleById(id, 2L);
     }
 
     @Test
-    public void getProjectById_whenProjectNotExists_shouldThrowExceptions() {
+    public void getProjectById_whenNotVisible_shouldThrowNotFound() {
         Long id = 1L;
-        when(projectRepository.findByIdAndDeletedAtIsNull(id)).thenReturn(Optional.empty());
 
-        assertThrows(RuntimeException.class, () -> projectService.getProjectById(id));
-        verify(projectRepository).findByIdAndDeletedAtIsNull(id);
+        when(currentUserProvider.getCurrentUser()).thenReturn(buildUser(2L));
+        when(projectRepository.findVisibleById(id, 2L)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> projectService.getProjectById(id));
+        verify(projectMapper, never()).toResponse(any());
     }
 
+
     @Test
-    public void getAllProject_shouldRespond() {
+    public void getAllProject_shouldReturnOnlyProjectsVisibleToCaller() {
         Pageable pageable = PageRequest.of(0, 10);
-        Project project1 = new Project();
-        Project project2 = new Project();
-        Page<Project> fakePage = new PageImpl<>(List.of(project1, project2));
-        when(projectRepository.findAllByDeletedAtIsNull(pageable)).thenReturn(fakePage);
+        Page<Project> fakePage = new PageImpl<>(List.of(new Project(), new Project()));
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(buildUser(2L));
+        when(projectRepository.findAllVisible(2L, pageable)).thenReturn(fakePage);
+
         Page<ProjectResponse> result = projectService.getAllProject(pageable);
 
         assertEquals(2, result.getContent().size());
-        verify(projectRepository).findAllByDeletedAtIsNull(pageable);
+        verify(projectRepository).findAllVisible(2L, pageable);
     }
 
     @Test
     public void createProject_shouldRespond() {
-        User user = new User();
-        user.setId(1L);
+        User user = buildUser(1L);
         String projectName = "White Room";
         String key = "ABS";
         ProjectRequest request = new ProjectRequest();
@@ -103,91 +116,142 @@ class ProjectServiceTest {
         when(projectMapper.toResponse(project)).thenReturn(expected);
         ProjectResponse result = projectService.createProject(request);
 
-
         assertEquals(expected, result);
         verify(projectRepository).save(any(Project.class));
         verify(projectMemberService).addOwnerAsAdmin(any(Project.class), eq(user));
+    }
 
+    @Test
+    public void createProject_whenKeyAlreadyExists_shouldThrowException() {
+        String key = "ABS";
+        ProjectRequest request = new ProjectRequest();
+        request.setName("White Room");
+        request.setKey(key);
+
+        when(projectRepository.existsByKeyAndDeletedAtIsNull(key)).thenReturn(true);
+
+        assertThrows(DuplicateResourceException.class, () -> projectService.createProject(request));
+        verify(projectRepository, never()).save(any(Project.class));
+        verify(projectMemberService, never()).addOwnerAsAdmin(any(), any());
     }
 
     @Test
     public void updateProject_whenAuthorized_shouldRespond() {
-        String projectName = "White Room";
-        String key = "ABS";
         Long id = 1L;
-        User user = new User();
-        user.setId(2L);
-        when(currentUserProvider.getCurrentUser()).thenReturn(user);
+        User owner = buildUser(2L);
         Project project = new Project();
-        project.setOwner(user);
-        when(projectRepository.findByIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(project));
+        project.setId(id);
+        project.setOwner(owner);
         ProjectRequest request = new ProjectRequest();
-        request.setName(projectName);
-        request.setKey(key);
+        request.setName("White Room");
+        request.setKey("ABS");
         Project newProject = new Project();
-        newProject.setKey(key);
-        newProject.setName(projectName);
-        when(projectMapper.updateEntity(request, project)).thenReturn(newProject);
+        newProject.setKey("ABS");
+        newProject.setName("White Room");
         ProjectResponse expected = new ProjectResponse();
-        expected.setKey(key);
-        expected.setName(projectName);
+        expected.setKey("ABS");
+        expected.setName("White Room");
         expected.setOwnerId(2L);
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.findVisibleById(id, 2L)).thenReturn(Optional.of(project));
+        when(projectMapper.updateEntity(request, project)).thenReturn(newProject);
         when(projectMapper.toResponse(newProject)).thenReturn(expected);
 
-        ProjectResponse result = projectService.updateProject(1L, request);
+        ProjectResponse result = projectService.updateProject(id, request);
 
         assertEquals(expected, result);
         verify(projectRepository).save(any(Project.class));
     }
 
     @Test
-    public void updateProject_whenUnauthorized_shouldThrowExceptions() {
+    public void updateProject_whenMemberButNotOwner_shouldThrowAccessDenied() {
         Long id = 1L;
-        User owner = new User();
-        owner.setId(2L);
-        User caller = new User();
-        caller.setId(3L);
+        User owner = buildUser(2L);
+        User caller = buildUser(3L);
         Project project = new Project();
+        project.setId(id);
         project.setOwner(owner);
-        ProjectRequest request = new ProjectRequest();
-        when(projectRepository.findByIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(project));
-        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
 
-        assertThrows(AccessDeniedException.class, () -> projectService.updateProject(id, request));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectRepository.findVisibleById(id, 3L)).thenReturn(Optional.of(project));
+
+        assertThrows(AccessDeniedException.class, () -> projectService.updateProject(id, new ProjectRequest()));
         verify(projectRepository, never()).save(any(Project.class));
     }
 
     @Test
-    public void DeleteProject_whenAuthorized_shouldDelete() {
+    public void updateProject_whenNotVisible_shouldThrowNotFound() {
         Long id = 1L;
-        User user = new User();
-        user.setId(2L);
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(buildUser(3L));
+        when(projectRepository.findVisibleById(id, 3L)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> projectService.updateProject(id, new ProjectRequest()));
+        verify(projectRepository, never()).save(any(Project.class));
+    }
+
+    @Test
+    public void updateProject_whenKeyBelongsToAnotherProject_shouldThrowException() {
+        Long id = 1L;
+        String key = "ABS";
+        User owner = buildUser(2L);
         Project project = new Project();
         project.setId(id);
-        project.setOwner(user);
-        when(currentUserProvider.getCurrentUser()).thenReturn(user);
-        when(projectRepository.findByIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(project));
+        project.setOwner(owner);
+        ProjectRequest request = new ProjectRequest();
+        request.setKey(key);
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.findVisibleById(id, 2L)).thenReturn(Optional.of(project));
+        when(projectRepository.existsByKeyAndDeletedAtIsNullAndIdNot(key, id)).thenReturn(true);
+
+        assertThrows(DuplicateResourceException.class, () -> projectService.updateProject(id, request));
+        verify(projectRepository, never()).save(any(Project.class));
+    }
+
+    @Test
+    public void deleteProject_whenAuthorized_shouldDelete() {
+        Long id = 1L;
+        User owner = buildUser(2L);
+        Project project = new Project();
+        project.setId(id);
+        project.setOwner(owner);
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(owner);
+        when(projectRepository.findVisibleById(id, 2L)).thenReturn(Optional.of(project));
 
         projectService.deleteProject(id);
 
-        verify(projectRepository).save(any(Project.class));
+        assertNotNull(project.getDeletedAt());
+        verify(projectRepository).save(project);
     }
 
     @Test
-    public void DeleteProject_whenUnauthorized_shouldThrowExceptions() {
+    public void deleteProject_whenMemberButNotOwner_shouldThrowAccessDenied() {
         Long id = 1L;
-        User owner = new User();
-        owner.setId(2L);
-        User caller = new User();
-        caller.setId(3L);
+        User owner = buildUser(2L);
+        User caller = buildUser(3L);
         Project project = new Project();
+        project.setId(id);
         project.setOwner(owner);
-        when(projectRepository.findByIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(project));
+
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectRepository.findVisibleById(id, 3L)).thenReturn(Optional.of(project));
 
         assertThrows(AccessDeniedException.class, () -> projectService.deleteProject(id));
-
+        assertNull(project.getDeletedAt());
         verify(projectRepository, never()).save(any(Project.class));
     }
 
+    @Test
+    public void deleteProject_whenNotVisible_shouldThrowNotFound() {
+        Long id = 1L;
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(buildUser(3L));
+        when(projectRepository.findVisibleById(id, 3L)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> projectService.deleteProject(id));
+        verify(projectRepository, never()).save(any(Project.class));
+    }
 }

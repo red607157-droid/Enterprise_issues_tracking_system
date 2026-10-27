@@ -11,7 +11,7 @@ import com.example.enterprise_issues_tracking_system.repository.RefreshTokenRepo
 import com.example.enterprise_issues_tracking_system.repository.UserRepository;
 import com.example.enterprise_issues_tracking_system.security.JWTUtil;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +23,8 @@ import java.util.UUID;
 @Transactional
 @RequiredArgsConstructor
 public class AuthService {
+
+    private static final String INVALID_CREDENTIALS_MESSAGE = "Invalid email or password";
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -47,10 +49,12 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new InvalidCredentialsException("Invalid email and password"));
+                .orElseThrow(() -> new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE));
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new InvalidCredentialsException("Invalid email or password");
+            throw new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE);
         }
+        checkAccountIsActive(user);
+
         String accessToken = jwtUtil.generateAccessToken(user);
         String refreshToken = UUID.randomUUID().toString();
         RefreshToken refresh = RefreshToken.builder()
@@ -72,6 +76,8 @@ public class AuthService {
             throw new InvalidCredentialsException("Your refresh token has expired");
         }
         User user = refreshToken.getUser();
+        checkAccountIsActive(user);
+
         String accessToken = jwtUtil.generateAccessToken(user);
         String newRefreshToken = UUID.randomUUID().toString();
         refreshTokenRepository.deleteById(refreshToken.getRefreshToken());
@@ -91,5 +97,11 @@ public class AuthService {
         RefreshToken refreshToken = refreshTokenRepository.findById(request.getRefreshToken())
                 .orElseThrow(() -> new InvalidCredentialsException("refresh token has already been logged out"));
         refreshTokenRepository.deleteById(refreshToken.getRefreshToken());
+    }
+
+    private void checkAccountIsActive(User user) {
+        if (user.getUserStatus() != UserStatus.ACTIVE) {
+            throw new AccessDeniedException("Account is not active");
+        }
     }
 }

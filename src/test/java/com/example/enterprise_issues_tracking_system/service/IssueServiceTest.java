@@ -5,6 +5,7 @@ import com.example.enterprise_issues_tracking_system.dto.IssueResponse;
 import com.example.enterprise_issues_tracking_system.dto.IssueUpdateRequest;
 import com.example.enterprise_issues_tracking_system.entity.*;
 import com.example.enterprise_issues_tracking_system.exception.ImmutableFieldException;
+import com.example.enterprise_issues_tracking_system.exception.InvalidStatusTransitionException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.IssueMapper;
 import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
@@ -163,6 +164,7 @@ class IssueServiceTest {
         Long issueId = 3L;
         Issue issue = new Issue();
         issue.setId(issueId);
+        issue.setProject(project);
         ProjectMember callerMembership = buildMembership(projectId, callerId, Role.DEVELOPER);
         IssueResponse response = new IssueResponse();
         response.setProjectId(projectId);
@@ -261,12 +263,15 @@ class IssueServiceTest {
         Issue existingIssue = new Issue();
         existingIssue.setId(existingIssueId);
         existingIssue.setProject(project);
+        existingIssue.setIssueStatus(IssueStatus.OPEN);
         Long callerId = 2L;
         User caller = new User();
         caller.setId(callerId);
         ProjectMember callerMembership = buildMembership(projectId, callerId, Role.ADMIN);
         IssueUpdateRequest request = new IssueUpdateRequest();
         request.setDueDate(LocalDateTime.now());
+        request.setIssueStatus(IssueStatus.OPEN);
+        request.setProjectId(projectId);
         Issue newIssue = new Issue();
         newIssue.setDueDate(LocalDateTime.now());
         newIssue.setId(existingIssueId);
@@ -311,11 +316,13 @@ class IssueServiceTest {
         existingIssue.setReporter(reporter);
         existingIssue.setDueDate(dueDate);
         existingIssue.setIssuePriority(IssuePriority.CRITICAL);
+        existingIssue.setIssueStatus(IssueStatus.OPEN);
         IssueUpdateRequest request = new IssueUpdateRequest();
         request.setAssigneeId(callerId);
         request.setProjectId(projectId);
         request.setDueDate(dueDate);
         request.setIssuePriority(IssuePriority.LOW);
+        request.setIssueStatus(IssueStatus.IN_PROGRESS);
         Issue newIssue = new Issue();
         newIssue.setAssignee(assignee);
         newIssue.setReporter(reporter);
@@ -465,6 +472,31 @@ class IssueServiceTest {
         when(projectMemberRepository.findMembership(projectId, newAssigneeId)).thenReturn(Optional.empty());
 
         assertThrows(AccessDeniedException.class, () -> issueService.updateIssue(existingIssueId, request));
+        verify(issueRepository, never()).save(any());
+    }
+
+    @Test
+    public void updateIssue_whenStatusTransitionIsInvalid_shouldThrowException() {
+        Long projectId = 3L;
+        Project project = new Project();
+        project.setId(projectId);
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+        Long existingIssueId = 1L;
+        Issue existingIssue = new Issue();
+        existingIssue.setId(existingIssueId);
+        existingIssue.setProject(project);
+        existingIssue.setIssueStatus(IssueStatus.OPEN);
+        IssueUpdateRequest request = new IssueUpdateRequest();
+        request.setProjectId(projectId);
+        request.setIssueStatus(IssueStatus.DONE);
+
+        when(issueRepository.findByIdAndDeletedAtIsNull(existingIssueId)).thenReturn(Optional.of(existingIssue));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.ADMIN)));
+
+        assertThrows(InvalidStatusTransitionException.class, () -> issueService.updateIssue(existingIssueId, request));
         verify(issueRepository, never()).save(any());
     }
 

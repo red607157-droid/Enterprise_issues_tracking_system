@@ -12,7 +12,7 @@ public class ProjectRequest {
     private String key;
 
     @NotBlank(message = "Name is required")
-    @Size(min = 3, max = 20, message = "Project name must be at least 5 characters")
+    @Size(min = 3, max = 20, message = "Project name must be at least 3 characters")
     private String name;
 
     @Size(max = 100)

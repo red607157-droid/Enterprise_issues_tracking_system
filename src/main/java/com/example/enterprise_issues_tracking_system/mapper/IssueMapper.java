@@ -38,11 +38,6 @@ public class IssueMapper {
     }
 
     public Issue updateEntity(IssueUpdateRequest request, Issue existingIssue) {
-        if (!Objects.equals(request.getProjectId(), existingIssue.getProject().getId())){
-            Project project = new Project();
-            project.setId(request.getProjectId());
-            existingIssue.setProject(project);
-        }
 
         Long currentAssigneeId = existingIssue.getAssignee() != null ? existingIssue.getAssignee().getId() : null;
         if (!Objects.equals(request.getAssigneeId(), currentAssigneeId)) {

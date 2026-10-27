@@ -20,7 +20,7 @@ public class Project extends Auditable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String key;
 
     @Column(nullable = false)

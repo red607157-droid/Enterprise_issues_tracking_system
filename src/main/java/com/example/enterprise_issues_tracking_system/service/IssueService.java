@@ -5,6 +5,7 @@ import com.example.enterprise_issues_tracking_system.dto.IssueResponse;
 import com.example.enterprise_issues_tracking_system.dto.IssueUpdateRequest;
 import com.example.enterprise_issues_tracking_system.entity.*;
 import com.example.enterprise_issues_tracking_system.exception.ImmutableFieldException;
+import com.example.enterprise_issues_tracking_system.exception.InvalidStatusTransitionException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.IssueMapper;
 import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
@@ -104,7 +105,10 @@ public class IssueService {
                 throw new AccessDeniedException("You are not allowed to do this");
             }
         }
-
+        IssueStatus currentStatus = existingIssue.getIssueStatus();
+        if (!currentStatus.canTransitionTo(request.getIssueStatus())) {
+            throw new InvalidStatusTransitionException("Cannot move an issue from " + currentStatus + " to " + request.getIssueStatus());
+        }
         Issue updatedIssue = issueMapper.updateEntity(request, existingIssue);
         issueRepository.save(updatedIssue);
         return issueMapper.toResponse(updatedIssue);

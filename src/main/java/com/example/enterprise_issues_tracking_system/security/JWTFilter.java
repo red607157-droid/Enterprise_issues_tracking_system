@@ -45,7 +45,7 @@ public class JWTFilter extends OncePerRequestFilter {
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new UsernameNotFoundException("User not found"));
             UserPrincipal userDetails = new UserPrincipal(user);
-            if (SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (userDetails.isEnabled() && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
