@@ -19,6 +19,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.io.InputStream;
@@ -376,32 +381,29 @@ class AttachmentServiceTest {
         Long callerId = 3L;
         User caller = new User();
         caller.setId(callerId);
-        Long attachment1Id = 4L;
         Attachment attachment1 = new Attachment();
-        attachment1.setId(attachment1Id);
+        attachment1.setId(4L);
         attachment1.setIssue(issue);
-        Long attachment2Id = 5L;
         Attachment attachment2 = new Attachment();
-        attachment2.setId(attachment2Id);
+        attachment2.setId(5L);
         attachment2.setIssue(issue);
-        List<Attachment> allAttachments = List.of(attachment1, attachment2);
         AttachmentResponse response1 = new AttachmentResponse();
-        response1.setId(attachment1Id);
-        response1.setIssueId(issueId);
+        response1.setId(4L);
         AttachmentResponse response2 = new AttachmentResponse();
-        response2.setId(attachment2Id);
-        response2.setIssueId(issueId);
+        response2.setId(5L);
+        Pageable pageable = PageRequest.of(0, 10);
 
         when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
-        when(attachmentRepository.findAllByIssueIdAndDeletedAtIsNull(issueId)).thenReturn(allAttachments);
+        when(attachmentRepository.findAllByIssueIdAndDeletedAtIsNull(issueId, pageable)).thenReturn(new PageImpl<>(List.of(attachment1, attachment2)));
         when(attachmentMapper.toResponse(attachment1)).thenReturn(response1);
         when(attachmentMapper.toResponse(attachment2)).thenReturn(response2);
-        List<AttachmentResponse> result = attachmentService.getAttachmentsByIssue(issueId);
 
-        assertEquals(List.of(response1, response2), result);
+        Page<AttachmentResponse> result = attachmentService.getAttachmentsByIssue(issueId, pageable);
+
+        assertEquals(List.of(response1, response2), result.getContent());
     }
 
     @Test
@@ -416,13 +418,15 @@ class AttachmentServiceTest {
         Long callerId = 3L;
         User caller = new User();
         caller.setId(callerId);
+        Pageable pageable = PageRequest.of(0, 10);
 
         when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.empty());
 
-        assertThrows(AccessDeniedException.class, () -> attachmentService.getAttachmentsByIssue(issueId));
+        assertThrows(AccessDeniedException.class, () -> attachmentService.getAttachmentsByIssue(issueId, pageable));
+        verify(attachmentRepository, never()).findAllByIssueIdAndDeletedAtIsNull(any(), any());
     }
 
     @Test

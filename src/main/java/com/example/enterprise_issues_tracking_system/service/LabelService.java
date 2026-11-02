@@ -13,11 +13,15 @@ import com.example.enterprise_issues_tracking_system.repository.LabelRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
+import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +32,7 @@ public class LabelService {
     private final ProjectRepository projectRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final CurrentUserProvider currentUserProvider;
+    private static final Set<String> SORTED_FIELDS = Set.of("id", "name", "color", "createdAt");
 
     private void IsAMember(Long projectId) {
         Long callerId = currentUserProvider.getCurrentUser().getId();
@@ -60,12 +65,13 @@ public class LabelService {
         return labelMapper.toResponse(label);
     }
 
-    public List<LabelResponse> getLabelsByProject(Long projectId) {
+    public Page<LabelResponse> getLabelsByProject(Long projectId, Pageable pageable) {
         Project project = projectRepository.findByIdAndDeletedAtIsNull(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project ID not found"));
         IsAMember(projectId);
-        return labelRepository.findAllByProjectIdAndDeletedAtIsNull(projectId)
-                .stream().map(labelMapper::toResponse).toList();
+        PageableValidator.requireSortableBy(pageable, SORTED_FIELDS);
+        return labelRepository.findAllByProjectIdAndDeletedAtIsNull(projectId, pageable)
+            .map(labelMapper::toResponse);
     }
 
     public LabelResponse updateLabel(Long id, LabelUpdateRequest request) {

@@ -1,10 +1,12 @@
 package com.example.enterprise_issues_tracking_system.service;
 
+import com.example.enterprise_issues_tracking_system.dto.IssueFilter;
 import com.example.enterprise_issues_tracking_system.dto.IssueRequest;
 import com.example.enterprise_issues_tracking_system.dto.IssueResponse;
 import com.example.enterprise_issues_tracking_system.dto.IssueUpdateRequest;
 import com.example.enterprise_issues_tracking_system.entity.*;
 import com.example.enterprise_issues_tracking_system.exception.ImmutableFieldException;
+import com.example.enterprise_issues_tracking_system.exception.InvalidRequestException;
 import com.example.enterprise_issues_tracking_system.exception.InvalidStatusTransitionException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.IssueMapper;
@@ -15,14 +17,13 @@ import com.example.enterprise_issues_tracking_system.security.CurrentUserProvide
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.*;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDateTime;
@@ -216,42 +217,55 @@ class IssueServiceTest {
     @Test
     public void getAllIssue_whenFound_shouldRespond() {
         Long projectId = 1L;
-        Project project = new Project();
-        project.setId(projectId);
         Long callerId = 2L;
         User caller = new User();
         caller.setId(callerId);
         ProjectMember callerMembership = buildMembership(projectId, callerId, Role.DEVELOPER);
         Pageable pageable = PageRequest.of(0, 10);
-        Issue issue1 = new Issue();
-        Issue issue2 = new Issue();
-        Page<Issue> fakePage = new PageImpl<>(List.of(issue1, issue2));
+        IssueFilter filter = new IssueFilter(null, null, null, null, null);
+        Page<Issue> fakePage = new PageImpl<>(List.of(new Issue(), new Issue()));
 
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(callerMembership));
-        when(issueRepository.findAllByProjectIdAndDeletedAtIsNull(projectId, pageable)).thenReturn(fakePage);
-        Page<IssueResponse> result = issueService.getIssuesByProject(projectId, pageable);
+        when(issueRepository.findAll(ArgumentMatchers.<Specification<Issue>>any(), eq(pageable))).thenReturn(fakePage);
+
+        Page<IssueResponse> result = issueService.getIssuesByProject(projectId, filter, pageable);
 
         assertEquals(2, result.getContent().size());
         verify(projectMemberRepository).findMembership(projectId, callerId);
-        verify(issueRepository).findAllByProjectIdAndDeletedAtIsNull(projectId, pageable);
     }
 
     @Test
     public void getAllIssue_whenUnauthorized_shouldThrowException() {
         Long projectId = 1L;
-        Project project = new Project();
-        project.setId(projectId);
         Long callerId = 2L;
         User caller = new User();
         caller.setId(callerId);
         Pageable pageable = PageRequest.of(0, 10);
+        IssueFilter filter = new IssueFilter(null, null, null, null, null);
 
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.empty());
 
-        assertThrows(AccessDeniedException.class, () -> issueService.getIssuesByProject(projectId, pageable));
-        verify(issueRepository, never()).findAllByProjectIdAndDeletedAtIsNull(any(), any());
+        assertThrows(AccessDeniedException.class, () -> issueService.getIssuesByProject(projectId, filter, pageable));
+        verify(issueRepository, never()).findAll(ArgumentMatchers.<Specification<Issue>>any(), any(Pageable.class));
+    }
+
+    @Test
+    public void getAllIssue_whenSortFieldNotAllowed_shouldThrowException() {
+        Long projectId = 1L;
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+        Pageable pageable = PageRequest.of(0, 10, Sort.by("reporter.password"));
+        IssueFilter filter = new IssueFilter(null, null, null, null, null);
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectMemberRepository.findMembership(projectId, callerId))
+                .thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
+
+        assertThrows(InvalidRequestException.class, () -> issueService.getIssuesByProject(projectId, filter, pageable));
+        verify(issueRepository, never()).findAll(ArgumentMatchers.<Specification<Issue>>any(), any(Pageable.class));
     }
 
     @Test

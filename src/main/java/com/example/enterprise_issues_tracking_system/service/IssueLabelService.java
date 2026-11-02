@@ -15,11 +15,15 @@ import com.example.enterprise_issues_tracking_system.repository.LabelRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
+import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +36,7 @@ public class IssueLabelService {
     private final ProjectMemberRepository projectMemberRepository;
     private final CurrentUserProvider currentUserProvider;
     private final LabelMapper labelMapper;
+    private static final Set<String> SORTED_FIELDS = Set.of("id", "name", "color", "createdAt");
 
     public void addLabel(Long issueId, Long labelId) {
         Issue issue = findActiveIssue(issueId);
@@ -62,16 +67,16 @@ public class IssueLabelService {
         issueLabelRepository.delete(link);
     }
 
-    public List<LabelResponse> getLabelsByIssue(Long issueId) {
+    public Page<LabelResponse> getLabelsByIssue(Long issueId, Pageable pageable) {
         Issue issue = findActiveIssue(issueId);
         Long projectId = issue.getProject().getId();
         checkProjectIsActive(projectId);
         Long callerId = currentUserProvider.getCurrentUser().getId();
         projectMemberRepository.findMembership(projectId, callerId)
                 .orElseThrow(() -> new AccessDeniedException("You are not allowed to do this"));
-        return issueLabelRepository.findActiveLabelsByIssueId(issueId).stream()
-                .map(labelMapper::toResponse)
-                .toList();
+        PageableValidator.requireSortableBy(pageable, SORTED_FIELDS);
+        return issueLabelRepository.findActiveLabelsByIssueId(issueId, pageable)
+                .map(labelMapper::toResponse);
     }
 
     private Issue findActiveIssue(Long issueId) {

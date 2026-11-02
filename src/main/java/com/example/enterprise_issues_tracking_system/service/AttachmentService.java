@@ -13,8 +13,11 @@ import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
+import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
 import org.apache.tika.Tika;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -39,6 +42,7 @@ public class AttachmentService {
     private final Tika tika = new Tika();
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
     private static final Set<String> ALLOWED_TYPES   = Set.of("image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain");
+    private static final Set<String> SORTED_FIELDS = Set.of("id", "originalFilename", "contentType", "createdAt");
 
     private Issue IsMember(Long issueId) {
         Issue issue = issueRepository.findByIdAndDeletedAtIsNull(issueId)
@@ -93,11 +97,11 @@ public class AttachmentService {
         return new AttachmentContent(stream, attachment.getOriginalFilename(), attachment.getContentType());
     }
 
-    public List<AttachmentResponse> getAttachmentsByIssue(Long issueId) {
+    public Page<AttachmentResponse> getAttachmentsByIssue(Long issueId, Pageable pageable) {
         IsMember(issueId);
-        return attachmentRepository.findAllByIssueIdAndDeletedAtIsNull(issueId).stream()
-                .map(attachmentMapper::toResponse)
-                .toList();
+        PageableValidator.requireSortableBy(pageable, SORTED_FIELDS);
+        return attachmentRepository.findAllByIssueIdAndDeletedAtIsNull(issueId, pageable)
+                .map(attachmentMapper::toResponse);
     }
 
     public void deleteAttachment(Long id) {

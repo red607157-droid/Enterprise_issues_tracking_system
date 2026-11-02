@@ -6,11 +6,12 @@ import com.example.enterprise_issues_tracking_system.dto.CommentUpdateRequest;
 import com.example.enterprise_issues_tracking_system.service.CommentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -29,8 +30,10 @@ public class CommentController {
     }
 
     @GetMapping("/issues/{issueId}/comments")
-    public ResponseEntity<List<CommentResponse>> getCommentsByIssue(@PathVariable Long issueId) {
-        return ResponseEntity.ok(commentService.getCommentsByIssue(issueId));
+    public ResponseEntity<Page<CommentResponse>> getCommentsByIssue(
+            @PathVariable Long issueId,
+            @PageableDefault(size = 20, sort = "createdAt")Pageable pageable) {
+        return ResponseEntity.ok(commentService.getCommentsByIssue(issueId, pageable));
     }
 
     @PutMapping("/comments/{id}")

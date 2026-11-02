@@ -15,6 +15,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.util.List;
@@ -97,6 +101,7 @@ class LabelServiceTest {
         User caller = new User();
         caller.setId(callerId);
         LabelRequest request = new LabelRequest();
+        request.setProjectId(projectId);
 
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
@@ -169,32 +174,28 @@ class LabelServiceTest {
         Long callerId = 2L;
         User caller = new User();
         caller.setId(callerId);
-        Long label1Id = 1L;
         Label label1 = new Label();
-        label1.setId(label1Id);
+        label1.setId(1L);
         label1.setProject(project);
-        Long label2Id = 4L;
         Label label2 = new Label();
+        label2.setId(4L);
         label2.setProject(project);
-        label2.setId(label2Id);
         LabelResponse response1 = new LabelResponse();
-        response1.setId(label1Id);
-        response1.setProjectId(projectId);
+        response1.setId(1L);
         LabelResponse response2 = new LabelResponse();
-        response2.setId(label2Id);
-        response2.setProjectId(projectId);
-        List<Label> allLabel = List.of(label2, label1);
+        response2.setId(4L);
+        Pageable pageable = PageRequest.of(0, 10);
 
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
-        when(labelRepository.findAllByProjectIdAndDeletedAtIsNull(projectId)).thenReturn(allLabel);
+        when(labelRepository.findAllByProjectIdAndDeletedAtIsNull(projectId, pageable)).thenReturn(new PageImpl<>(List.of(label2, label1)));
         when(labelMapper.toResponse(label1)).thenReturn(response1);
         when(labelMapper.toResponse(label2)).thenReturn(response2);
-        List<LabelResponse> result = labelService.getLabelsByProject(projectId);
 
-        assertEquals(2, result.size());
-        verify(labelRepository).findAllByProjectIdAndDeletedAtIsNull(projectId);
+        Page<LabelResponse> result = labelService.getLabelsByProject(projectId, pageable);
+
+        assertEquals(List.of(response2, response1), result.getContent());
     }
 
     @Test
@@ -205,12 +206,14 @@ class LabelServiceTest {
         Long callerId = 2L;
         User caller = new User();
         caller.setId(callerId);
+        Pageable pageable = PageRequest.of(0, 10);
 
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.empty());
 
-        assertThrows(AccessDeniedException.class, () -> labelService.getLabelsByProject(projectId));
+        assertThrows(AccessDeniedException.class, () -> labelService.getLabelsByProject(projectId, pageable));
+        verify(labelRepository, never()).findAllByProjectIdAndDeletedAtIsNull(any(), any());
     }
 
     @Test

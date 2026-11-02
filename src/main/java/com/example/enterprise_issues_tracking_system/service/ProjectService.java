@@ -9,12 +9,15 @@ import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundE
 import com.example.enterprise_issues_tracking_system.mapper.ProjectMapper;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
+import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +46,7 @@ public class ProjectService {
 
     public Page<ProjectResponse> getAllProject(Pageable pageable) {
         Long callerId = currentUserProvider.getCurrentUser().getId();
+        PageableValidator.requireSortableBy(pageable, Set.of("id", "key", "name", "createdAt", "updatedAt"));
         return projectRepository.findAllVisible(callerId, pageable)
                 .map(projectMapper::toResponse);
     }

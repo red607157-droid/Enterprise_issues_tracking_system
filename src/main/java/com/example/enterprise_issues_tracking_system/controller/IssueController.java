@@ -1,13 +1,17 @@
 package com.example.enterprise_issues_tracking_system.controller;
 
+import com.example.enterprise_issues_tracking_system.dto.IssueFilter;
 import com.example.enterprise_issues_tracking_system.dto.IssueRequest;
 import com.example.enterprise_issues_tracking_system.dto.IssueResponse;
 import com.example.enterprise_issues_tracking_system.dto.IssueUpdateRequest;
+import com.example.enterprise_issues_tracking_system.entity.IssuePriority;
+import com.example.enterprise_issues_tracking_system.entity.IssueStatus;
 import com.example.enterprise_issues_tracking_system.service.IssueService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,8 +34,17 @@ public class IssueController {
     }
 
     @GetMapping("/projects/{projectId}/issues")
-    public ResponseEntity<Page<IssueResponse>> getIssuesByProject(@PageableDefault Pageable pageable, @PathVariable Long projectId) {
-        return ResponseEntity.ok(issueService.getIssuesByProject(projectId, pageable));
+    public ResponseEntity<Page<IssueResponse>> getIssuesByProject(
+            @PathVariable Long projectId,
+            @RequestParam(required = false)IssueStatus status,
+            @RequestParam(required = false)IssuePriority priority,
+            @RequestParam(required = false)Long assigneeId,
+            @RequestParam(required = false)Long labelId,
+            @RequestParam(required = false)String q,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)Pageable pageable
+            ) {
+        IssueFilter filter = new IssueFilter(status, priority, assigneeId, labelId, q);
+        return ResponseEntity.ok(issueService.getIssuesByProject(projectId, filter, pageable));
     }
 
     @PutMapping("/issues/{id}")

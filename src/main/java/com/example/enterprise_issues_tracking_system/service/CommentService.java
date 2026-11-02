@@ -10,11 +10,13 @@ import com.example.enterprise_issues_tracking_system.repository.CommentRepositor
 import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
+import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -28,6 +30,7 @@ public class CommentService {
     private final ProjectMemberRepository projectMemberRepository;
     private final IssueRepository issueRepository;
     private final CurrentUserProvider currentUserProvider;
+    private static final Set<String> SORTED_FIELDS = Set.of("id", "createdAt");
 
     private void IsAMember(Long issueId) {
         Long callerId = currentUserProvider.getCurrentUser().getId();
@@ -61,19 +64,11 @@ public class CommentService {
         return commentMapper.toResponse(comment);
     }
 
-    public List<CommentResponse> getCommentsByIssue(Long issueId) {
+    public Page<CommentResponse> getCommentsByIssue(Long issueId, Pageable pageable) {
         IsAMember(issueId);
-        List<Comment> allComment = commentRepository.findAllByIssueId(issueId);
-        Set<Long> allParentCommentId = new HashSet<>();
-        for (Comment comment : allComment) {
-            if (comment.getParentComment() != null && comment.getParentComment().getId() != null) {
-                allParentCommentId.add(comment.getParentComment().getId());
-            }
-        }
-        return allComment.stream()
-                .filter(comment -> comment.getDeletedAt() == null || allParentCommentId.contains(comment.getId()))
-                .map(commentMapper::toResponse)
-                .toList();
+        PageableValidator.requireSortableBy(pageable, SORTED_FIELDS);
+        return commentRepository.findVisibleByIssueId(issueId, pageable)
+                .map(commentMapper::toResponse);
     }
 
     public CommentResponse updateComment(Long id, CommentUpdateRequest request) {

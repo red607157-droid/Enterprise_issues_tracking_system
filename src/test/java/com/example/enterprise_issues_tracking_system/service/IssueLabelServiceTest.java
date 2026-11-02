@@ -18,6 +18,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.util.List;
@@ -206,15 +210,16 @@ class IssueLabelServiceTest {
         firstResponse.setId(LABEL_ID);
         LabelResponse secondResponse = new LabelResponse();
         secondResponse.setId(5L);
+        Pageable pageable = PageRequest.of(0, 10);
         givenIssueAndProject();
         givenCallerRole(Role.DEVELOPER);
-        when(issueLabelRepository.findActiveLabelsByIssueId(ISSUE_ID)).thenReturn(List.of(label, second));
+        when(issueLabelRepository.findActiveLabelsByIssueId(ISSUE_ID, pageable)).thenReturn(new PageImpl<>(List.of(label, second)));
         when(labelMapper.toResponse(label)).thenReturn(firstResponse);
         when(labelMapper.toResponse(second)).thenReturn(secondResponse);
 
-        List<LabelResponse> result = issueLabelService.getLabelsByIssue(ISSUE_ID);
+        Page<LabelResponse> result = issueLabelService.getLabelsByIssue(ISSUE_ID, pageable);
 
-        assertEquals(List.of(firstResponse, secondResponse), result);
+        assertEquals(List.of(firstResponse, secondResponse), result.getContent());
     }
 
     @Test
@@ -223,7 +228,7 @@ class IssueLabelServiceTest {
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(PROJECT_ID, CALLER_ID)).thenReturn(Optional.empty());
 
-        assertThrows(AccessDeniedException.class, () -> issueLabelService.getLabelsByIssue(ISSUE_ID));
-        verify(issueLabelRepository, never()).findActiveLabelsByIssueId(any());
+        assertThrows(AccessDeniedException.class, () -> issueLabelService.getLabelsByIssue(ISSUE_ID, PageRequest.of(0, 10)));
+        verify(issueLabelRepository, never()).findActiveLabelsByIssueId(any(), any());
     }
 }

@@ -1,5 +1,6 @@
 package com.example.enterprise_issues_tracking_system.service;
 
+import com.example.enterprise_issues_tracking_system.dto.IssueFilter;
 import com.example.enterprise_issues_tracking_system.dto.IssueRequest;
 import com.example.enterprise_issues_tracking_system.dto.IssueResponse;
 import com.example.enterprise_issues_tracking_system.dto.IssueUpdateRequest;
@@ -9,9 +10,11 @@ import com.example.enterprise_issues_tracking_system.exception.InvalidStatusTran
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.IssueMapper;
 import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
+import com.example.enterprise_issues_tracking_system.repository.IssueSpecifications;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
+import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -20,6 +23,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +34,7 @@ public class IssueService {
     private final ProjectRepository projectRepository;
     private final IssueMapper issueMapper;
     private final CurrentUserProvider currentUserProvider;
+    private static final Set<String> SORTABLE_FIELDS = Set.of("id", "title", "type", "issuePriority", "issueStatus", "dueDate", "createdAt", "updatedAt");
 
     private void checkCallerHasRole(Long projectId) {
         Long callerId = currentUserProvider.getCurrentUser().getId();
@@ -71,9 +76,10 @@ public class IssueService {
         return issueMapper.toResponse(issue);
     }
 
-    public Page<IssueResponse> getIssuesByProject(Long projectId, Pageable pageable) {
+    public Page<IssueResponse> getIssuesByProject(Long projectId,IssueFilter filter, Pageable pageable) {
         checkCallerHasRole(projectId);
-        return issueRepository.findAllByProjectIdAndDeletedAtIsNull(projectId, pageable)
+        PageableValidator.requireSortableBy(pageable, SORTABLE_FIELDS);
+        return issueRepository.findAll(IssueSpecifications.matching(projectId, filter), pageable)
                 .map(issueMapper::toResponse);
     }
 

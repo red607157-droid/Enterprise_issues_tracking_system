@@ -6,11 +6,12 @@ import com.example.enterprise_issues_tracking_system.dto.LabelUpdateRequest;
 import com.example.enterprise_issues_tracking_system.service.LabelService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -29,8 +30,11 @@ public class LabelController {
     }
 
     @GetMapping("/projects/{projectId}/labels")
-    public ResponseEntity<List<LabelResponse>> getLabelsByProject(@PathVariable Long projectId) {
-        return ResponseEntity.ok(labelService.getLabelsByProject(projectId));
+    public ResponseEntity<Page<LabelResponse>> getLabelsByProject(
+            @PathVariable Long projectId,
+            @PageableDefault(size = 20, sort = "name")Pageable pageable
+    ) {
+        return ResponseEntity.ok(labelService.getLabelsByProject(projectId, pageable));
     }
 
     @PutMapping("/labels/{id}")

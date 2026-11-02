@@ -4,6 +4,7 @@ import com.example.enterprise_issues_tracking_system.dto.CommentRequest;
 import com.example.enterprise_issues_tracking_system.dto.CommentResponse;
 import com.example.enterprise_issues_tracking_system.dto.CommentUpdateRequest;
 import com.example.enterprise_issues_tracking_system.entity.*;
+import com.example.enterprise_issues_tracking_system.exception.InvalidRequestException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.CommentMapper;
 import com.example.enterprise_issues_tracking_system.repository.CommentRepository;
@@ -17,8 +18,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.data.domain.*;
 import org.springframework.security.access.AccessDeniedException;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -92,8 +93,6 @@ class CommentServiceTest {
         CommentResponse result = commentService.createComment(request);
 
         assertEquals(response, result);
-        verify(issueRepository).findByIdAndDeletedAtIsNull(issueId);
-        verify(projectMemberRepository).findMembership(projectId, callerId);
         verify(commentRepository).save(any(Comment.class));
 
         ArgumentCaptor<Comment> argumentCaptor = ArgumentCaptor.forClass(Comment.class);
@@ -115,13 +114,13 @@ class CommentServiceTest {
         User caller = new User();
         caller.setId(callerId);
         CommentRequest request = new CommentRequest();
+        request.setIssueId(issueId);
 
         when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.empty());
 
         assertThrows(AccessDeniedException.class, () -> commentService.createComment(request));
-        verify(issueRepository).findByIdAndDeletedAtIsNull(issueId);
         verify(commentRepository, never()).save(any());
     }
 
@@ -136,6 +135,7 @@ class CommentServiceTest {
         Long issueId = 4L;
         Issue issue = new Issue();
         issue.setId(issueId);
+        issue.setProject(project);
         Long commentId = 1L;
         Comment comment = new Comment();
         comment.setId(commentId);
@@ -178,6 +178,7 @@ class CommentServiceTest {
         Long issueId = 4L;
         Issue issue = new Issue();
         issue.setId(issueId);
+        issue.setProject(project);
         Long commentId = 1L;
         Comment comment = new Comment();
         comment.setId(commentId);
@@ -194,60 +195,80 @@ class CommentServiceTest {
     }
 
     @Test
-    public void getAllComment_shouldRespond() {
+    public void getAllComment_whenMember_shouldRespondWithMappedPage() {
+        Long projectId = 3L;
+        Project project = new Project();
+        project.setId(projectId);
         Long issueId = 1L;
         Issue issue = new Issue();
         issue.setId(issueId);
+        issue.setProject(project);
         Long callerId = 2L;
         User caller = new User();
         caller.setId(callerId);
-        Long projectId = 3L;
-        Long c1Id = 4L;
         Comment c1 = new Comment();
-        c1.setId(c1Id);
-        c1.setIssue(issue);
-        c1.setBody("this issue must be critical");
-        Long c2Id = 5L;
+        c1.setId(4L);
         Comment c2 = new Comment();
-        c2.setId(c2Id);
-        c2.setIssue(issue);
-        c2.setDeletedAt(LocalDateTime.now());
-        Long c3Id = 6L;
-        Comment c3 = new Comment();
-        c3.setId(c3Id);
-        c3.setIssue(issue);
-        c3.setDeletedAt(LocalDateTime.now());
-        Long c4Id = 7L;
-        Comment c4 = new Comment();
-        c4.setId(c4Id);
-        c4.setIssue(issue);
-        c4.setBody("John can fix this issue");
-        c4.setParentComment(c2);
-        List<Comment> allComment = List.of(c1, c2, c3, c4);
+        c2.setId(5L);
         CommentResponse response1 = new CommentResponse();
-        response1.setId(c1Id);
-        response1.setIssueId(issueId);
-        response1.setBody("this issue must be critical");
+        response1.setId(4L);
         CommentResponse response2 = new CommentResponse();
-        response2.setId(c2Id);
-        response2.setIssueId(issueId);
-        CommentResponse response4 = new CommentResponse();
-        response4.setId(c4Id);
-        response4.setIssueId(issueId);
-        response4.setBody("John can fix this issue");
-        response4.setParentCommentId(c2Id);
+        response2.setId(5L);
+        Pageable pageable = PageRequest.of(0, 10);
 
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
-        when(commentRepository.findAllByIssueId(issueId)).thenReturn(allComment);
+        when(commentRepository.findVisibleByIssueId(issueId, pageable)).thenReturn(new PageImpl<>(List.of(c1, c2)));
         when(commentMapper.toResponse(c1)).thenReturn(response1);
         when(commentMapper.toResponse(c2)).thenReturn(response2);
-        when(commentMapper.toResponse(c4)).thenReturn(response4);
-        List<CommentResponse> result = commentService.getCommentsByIssue(issueId);
 
-        assertEquals(3, result.size());
-        verify(commentMapper, never()).toResponse(c3);
+        Page<CommentResponse> result = commentService.getCommentsByIssue(issueId, pageable);
+
+        assertEquals(List.of(response1, response2), result.getContent());
+    }
+
+    @Test
+    public void getAllComment_whenNotMember_shouldThrowException() {
+        Long projectId = 3L;
+        Project project = new Project();
+        project.setId(projectId);
+        Long issueId = 1L;
+        Issue issue = new Issue();
+        issue.setId(issueId);
+        issue.setProject(project);
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
+        when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.empty());
+
+        assertThrows(AccessDeniedException.class, () -> commentService.getCommentsByIssue(issueId, PageRequest.of(0, 10)));
+        verify(commentRepository, never()).findVisibleByIssueId(any(), any());
+    }
+
+    @Test
+    public void getAllComment_whenSortFieldNotAllowed_shouldThrowException() {
+        Long projectId = 3L;
+        Project project = new Project();
+        project.setId(projectId);
+        Long issueId = 1L;
+        Issue issue = new Issue();
+        issue.setId(issueId);
+        issue.setProject(project);
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
+        when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
+
+        assertThrows(InvalidRequestException.class,
+                () -> commentService.getCommentsByIssue(issueId, PageRequest.of(0, 10, Sort.by("body"))));
+        verify(commentRepository, never()).findVisibleByIssueId(any(), any());
     }
 
     @Test
