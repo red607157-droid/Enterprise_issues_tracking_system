@@ -4,6 +4,7 @@ import com.example.enterprise_issues_tracking_system.dto.CommentRequest;
 import com.example.enterprise_issues_tracking_system.dto.CommentResponse;
 import com.example.enterprise_issues_tracking_system.dto.CommentUpdateRequest;
 import com.example.enterprise_issues_tracking_system.entity.*;
+import com.example.enterprise_issues_tracking_system.event.AuditEvent;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.CommentMapper;
 import com.example.enterprise_issues_tracking_system.repository.CommentRepository;
@@ -12,10 +13,12 @@ import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRep
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
 import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
@@ -23,6 +26,7 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class CommentService {
 
     private final CommentMapper commentMapper;
@@ -30,6 +34,7 @@ public class CommentService {
     private final ProjectMemberRepository projectMemberRepository;
     private final IssueRepository issueRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
     private static final Set<String> SORTED_FIELDS = Set.of("id", "createdAt");
 
     private void IsAMember(Long issueId) {
@@ -46,6 +51,10 @@ public class CommentService {
         return Objects.equals(callerId, authorId);
     }
 
+    private void publish(AuditAction action, Long commentId, Long projectId, Long issueId) {
+        eventPublisher.publishEvent(new AuditEvent(AuditEntityType.COMMENT, commentId, projectId, issueId, action, null));
+    }
+
     public CommentResponse createComment(CommentRequest request) {
         Issue issue = issueRepository.findByIdAndDeletedAtIsNull(request.getIssueId())
                         .orElseThrow(() -> new ResourceNotFoundException("Issue ID not found"));
@@ -54,6 +63,7 @@ public class CommentService {
         Comment comment = commentMapper.toEntity(request);
         comment.setAuthor(caller);
         commentRepository.save(comment);
+        publish(AuditAction.CREATED, comment.getId(), issue.getProject().getId(), issue.getId());
         return commentMapper.toResponse(comment);
     }
 
@@ -95,5 +105,6 @@ public class CommentService {
         }
         comment.softDelete();
         commentRepository.save(comment);
+        publish(AuditAction.DELETED, comment.getId(), projectId, comment.getIssue().getId());
     }
 }

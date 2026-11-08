@@ -5,6 +5,7 @@ import com.example.enterprise_issues_tracking_system.dto.IssueRequest;
 import com.example.enterprise_issues_tracking_system.dto.IssueResponse;
 import com.example.enterprise_issues_tracking_system.dto.IssueUpdateRequest;
 import com.example.enterprise_issues_tracking_system.entity.*;
+import com.example.enterprise_issues_tracking_system.event.AuditEvent;
 import com.example.enterprise_issues_tracking_system.exception.ImmutableFieldException;
 import com.example.enterprise_issues_tracking_system.exception.InvalidRequestException;
 import com.example.enterprise_issues_tracking_system.exception.InvalidStatusTransitionException;
@@ -22,6 +23,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
@@ -41,6 +43,9 @@ class IssueServiceTest {
 
     @Mock
     private IssueRepository issueRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @Mock
     private ProjectRepository projectRepository;
@@ -361,6 +366,43 @@ class IssueServiceTest {
         assertEquals(response, result);
         verify(issueRepository).findByIdAndDeletedAtIsNull(existingIssueId);
         verify(issueRepository).save(any(Issue.class));
+    }
+
+    @Test
+    public void updateIssue_whenTitleAndStatusChange_shouldPublishAuditEvents() {
+        Long projectId = 3L;
+        Project project = new Project();
+        project.setId(projectId);
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+        Long issueId = 1L;
+        Issue existingIssue = new Issue();
+        existingIssue.setId(issueId);
+        existingIssue.setProject(project);
+        existingIssue.setIssueStatus(IssueStatus.OPEN);
+        existingIssue.setTitle("Old title");
+        IssueUpdateRequest request = new IssueUpdateRequest();
+        request.setProjectId(projectId);
+        request.setIssueStatus(IssueStatus.IN_PROGRESS);
+        request.setTitle("New title");
+
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(existingIssue));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.ADMIN)));
+        when(issueMapper.updateEntity(request, existingIssue)).thenReturn(existingIssue);
+
+        issueService.updateIssue(issueId, request);
+
+        ArgumentCaptor<AuditEvent> captor = ArgumentCaptor.forClass(AuditEvent.class);
+        verify(eventPublisher, times(2)).publishEvent(captor.capture());
+        List<AuditEvent> events = captor.getAllValues();
+        assertEquals(AuditAction.UPDATED, events.get(0).action());
+        assertTrue(events.get(0).details().contains("title"));
+        assertEquals(AuditAction.STATUS_CHANGED, events.get(1).action());
+        assertEquals("OPEN -> IN_PROGRESS", events.get(1).details());
+        assertEquals(issueId, events.get(1).issueId());
+        assertEquals(projectId, events.get(1).projectId());
     }
 
     @Test

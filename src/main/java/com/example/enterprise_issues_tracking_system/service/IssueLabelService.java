@@ -1,11 +1,8 @@
 package com.example.enterprise_issues_tracking_system.service;
 
 import com.example.enterprise_issues_tracking_system.dto.LabelResponse;
-import com.example.enterprise_issues_tracking_system.entity.Issue;
-import com.example.enterprise_issues_tracking_system.entity.IssueLabel;
-import com.example.enterprise_issues_tracking_system.entity.IssueLabelId;
-import com.example.enterprise_issues_tracking_system.entity.Label;
-import com.example.enterprise_issues_tracking_system.entity.Role;
+import com.example.enterprise_issues_tracking_system.entity.*;
+import com.example.enterprise_issues_tracking_system.event.AuditEvent;
 import com.example.enterprise_issues_tracking_system.exception.DuplicateResourceException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.LabelMapper;
@@ -17,16 +14,19 @@ import com.example.enterprise_issues_tracking_system.repository.ProjectRepositor
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
 import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class IssueLabelService {
 
     private final IssueRepository issueRepository;
@@ -36,6 +36,7 @@ public class IssueLabelService {
     private final ProjectMemberRepository projectMemberRepository;
     private final CurrentUserProvider currentUserProvider;
     private final LabelMapper labelMapper;
+    private final ApplicationEventPublisher eventPublisher;
     private static final Set<String> SORTED_FIELDS = Set.of("id", "name", "color", "createdAt");
 
     public void addLabel(Long issueId, Long labelId) {
@@ -55,6 +56,7 @@ public class IssueLabelService {
         IssueLabel link = new IssueLabel();
         link.setId(linkId);
         issueLabelRepository.save(link);
+        publish(AuditAction.LABEL_ATTACHED, projectId, issueId, "label " + labelId + " (" + label.getName() + ")");
     }
 
     public void removeLabel(Long issueId, Long labelId) {
@@ -65,6 +67,7 @@ public class IssueLabelService {
         IssueLabel link = issueLabelRepository.findLink(issueId, labelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Label is not attached to this issue"));
         issueLabelRepository.delete(link);
+        publish(AuditAction.LABEL_DETACHED, projectId, issueId, "label " + labelId);
     }
 
     public Page<LabelResponse> getLabelsByIssue(Long issueId, Pageable pageable) {
@@ -98,5 +101,9 @@ public class IssueLabelService {
         if (!isManagerOrAdmin && !isAssignee) {
             throw new AccessDeniedException("You are not allowed to do this");
         }
+    }
+
+    private void publish(AuditAction action, Long projectId, Long issueId, String details) {
+        eventPublisher.publishEvent(new AuditEvent(AuditEntityType.ISSUE, issueId, projectId, issueId, action, details));
     }
 }

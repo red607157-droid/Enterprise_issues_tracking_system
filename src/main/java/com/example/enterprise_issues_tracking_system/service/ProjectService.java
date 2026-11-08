@@ -2,8 +2,11 @@ package com.example.enterprise_issues_tracking_system.service;
 
 import com.example.enterprise_issues_tracking_system.dto.ProjectRequest;
 import com.example.enterprise_issues_tracking_system.dto.ProjectResponse;
+import com.example.enterprise_issues_tracking_system.entity.AuditAction;
+import com.example.enterprise_issues_tracking_system.entity.AuditEntityType;
 import com.example.enterprise_issues_tracking_system.entity.Project;
 import com.example.enterprise_issues_tracking_system.entity.User;
+import com.example.enterprise_issues_tracking_system.event.AuditEvent;
 import com.example.enterprise_issues_tracking_system.exception.DuplicateResourceException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.ProjectMapper;
@@ -11,6 +14,7 @@ import com.example.enterprise_issues_tracking_system.repository.ProjectRepositor
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
 import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
@@ -27,6 +31,7 @@ public class ProjectService {
     private final ProjectMapper projectMapper;
     private final ProjectMemberService projectMemberService;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ProjectResponse createProject(ProjectRequest request) {
         if (projectRepository.existsByKeyAndDeletedAtIsNull(request.getKey())) {
@@ -37,6 +42,7 @@ public class ProjectService {
         project.setOwner(owner);
         projectRepository.save(project);
         projectMemberService.addOwnerAsAdmin(project, owner);
+        publish(AuditAction.CREATED, project);
         return projectMapper.toResponse(project);
     }
 
@@ -59,6 +65,7 @@ public class ProjectService {
         }
         Project newProject = projectMapper.updateEntity(request, project);
         projectRepository.save(newProject);
+        publish(AuditAction.UPDATED, newProject);
         return projectMapper.toResponse(newProject);
     }
 
@@ -67,6 +74,7 @@ public class ProjectService {
         checkCallerIsOwner(project);
         project.softDelete();
         projectRepository.save(project);
+        publish(AuditAction.DELETED, project);
     }
 
     private Project findVisibleProject(Long id) {
@@ -79,5 +87,9 @@ public class ProjectService {
         if (!currentUserProvider.getCurrentUser().equals(project.getOwner())) {
             throw new AccessDeniedException("You don't have the permission to modify this project");
         }
+    }
+
+    private void publish(AuditAction action, Project project) {
+        eventPublisher.publishEvent(new AuditEvent(AuditEntityType.PROJECT, project.getId(), project.getId(), null, action, "key " + project.getKey()));
     }
 }

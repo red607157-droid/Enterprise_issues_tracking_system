@@ -3,6 +3,7 @@ package com.example.enterprise_issues_tracking_system.service;
 import com.example.enterprise_issues_tracking_system.dto.ProjectMemberRequest;
 import com.example.enterprise_issues_tracking_system.dto.ProjectMemberResponse;
 import com.example.enterprise_issues_tracking_system.entity.*;
+import com.example.enterprise_issues_tracking_system.event.AuditEvent;
 import com.example.enterprise_issues_tracking_system.exception.DuplicateResourceException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.ProjectMemberMapper;
@@ -11,6 +12,7 @@ import com.example.enterprise_issues_tracking_system.repository.ProjectRepositor
 import com.example.enterprise_issues_tracking_system.repository.UserRepository;
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +29,7 @@ public class ProjectMemberService {
     private final UserRepository userRepository;
     private final ProjectMemberMapper projectMemberMapper;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ProjectMemberResponse addMember(Long id, ProjectMemberRequest request) {
         Project project = findActiveProject(id);
@@ -39,6 +42,7 @@ public class ProjectMemberService {
         }
         ProjectMember projectMember = projectMemberMapper.toEntity(request, user, project);
         projectMemberRepository.save(projectMember);
+        publish(AuditAction.CREATED, user.getId(), id, "role " + request.getRole());
         return projectMemberMapper.toResponse(projectMember);
     }
 
@@ -55,8 +59,12 @@ public class ProjectMemberService {
         ProjectMember projectMember = findMember(id, userId);
         checkCanModifyTarget(callerRole, project, userId, projectMember);
         checkCanAssignRole(callerRole, request.getRole());
+        Role oldRole = projectMember.getRole();
         projectMember.setRole(request.getRole());
         projectMemberRepository.save(projectMember);
+        if (oldRole != request.getRole()) {
+            publish(AuditAction.ROLE_CHANGED, userId, id, "role " + oldRole + " -> " + request.getRole());
+        }
         return projectMemberMapper.toResponse(projectMember);
     }
 
@@ -66,6 +74,7 @@ public class ProjectMemberService {
         ProjectMember projectMember = findMember(id, userId);
         checkCanModifyTarget(callerRole, project, userId, projectMember);
         projectMemberRepository.delete(projectMember);
+        publish(AuditAction.DELETED, userId, id, "role " + projectMember.getRole());
     }
 
     public void addOwnerAsAdmin(Project project, User user) {
@@ -91,7 +100,7 @@ public class ProjectMemberService {
                 .orElseThrow(() -> new ResourceNotFoundException("Project ID or user ID not found"));
     }
 
-        private Role requireAdminOrManager(Long projectId) {
+    private Role requireAdminOrManager(Long projectId) {
         Long callerId = currentUserProvider.getCurrentUser().getId();
         ProjectMember callerMembership = projectMemberRepository.findMembership(projectId, callerId)
                 .orElseThrow(() -> new AccessDeniedException("You're not allowed to do this"));
@@ -114,5 +123,9 @@ public class ProjectMemberService {
         if (target.getRole() == Role.ADMIN && callerRole != Role.ADMIN) {
             throw new AccessDeniedException("Only an admin can modify or remove an admin");
         }
+    }
+
+    private void publish(AuditAction action, Long userId, Long projectId, String details) {
+        eventPublisher.publishEvent(new AuditEvent(AuditEntityType.PROJECT_MEMBER, userId, projectId, null, action, details));
     }
 }

@@ -1,10 +1,8 @@
 package com.example.enterprise_issues_tracking_system.service;
 
 import com.example.enterprise_issues_tracking_system.dto.AttachmentResponse;
-import com.example.enterprise_issues_tracking_system.entity.Attachment;
-import com.example.enterprise_issues_tracking_system.entity.Issue;
-import com.example.enterprise_issues_tracking_system.entity.Project;
-import com.example.enterprise_issues_tracking_system.entity.Role;
+import com.example.enterprise_issues_tracking_system.entity.*;
+import com.example.enterprise_issues_tracking_system.event.AuditEvent;
 import com.example.enterprise_issues_tracking_system.exception.InvalidFileException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.AttachmentMapper;
@@ -16,10 +14,12 @@ import com.example.enterprise_issues_tracking_system.security.CurrentUserProvide
 import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
 import org.apache.tika.Tika;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,6 +30,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class AttachmentService {
 
     private final IssueRepository issueRepository;
@@ -39,6 +40,7 @@ public class AttachmentService {
     private final CurrentUserProvider currentUserProvider;
     private final AttachmentMapper attachmentMapper;
     private final FileStorageService fileStorageService;
+    private final ApplicationEventPublisher eventPublisher;
     private final Tika tika = new Tika();
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
     private static final Set<String> ALLOWED_TYPES   = Set.of("image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain");
@@ -53,6 +55,10 @@ public class AttachmentService {
         projectMemberRepository.findMembership(project.getId(), callerId)
                 .orElseThrow(() -> new AccessDeniedException("You don't allowed to do this"));
         return issue;
+    }
+
+    private void publish(AuditAction action, Long attachmentId, Long projectId, Long issueId, String filename) {
+        eventPublisher.publishEvent(new AuditEvent(AuditEntityType.ATTACHMENT, attachmentId, projectId, issueId, action, filename));
     }
 
     public AttachmentResponse createAttachment(byte[] content, String originFileName, Long issueId) throws IOException {
@@ -79,6 +85,7 @@ public class AttachmentService {
                 .uploadedBy(currentUserProvider.getCurrentUser())
                 .build();
         attachmentRepository.save(attachment);
+        publish(AuditAction.CREATED, attachment.getId(), issue.getProject().getId(), issueId, originFileName);
         return attachmentMapper.toResponse(attachment);
     }
 
@@ -120,6 +127,7 @@ public class AttachmentService {
         }
         attachment.softDelete();
         attachmentRepository.save(attachment);
+        publish(AuditAction.DELETED, attachment.getId(), projectId, attachment.getIssue().getId(), attachment.getOriginalFilename());
     }
 
 }
