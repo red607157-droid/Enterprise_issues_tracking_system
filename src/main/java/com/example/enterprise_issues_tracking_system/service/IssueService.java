@@ -109,6 +109,7 @@ public class IssueService {
         Issue existingIssue = issueRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Issue ID not found"));
         Long projectId = existingIssue.getProject().getId();
+        checkCallerHasRole(projectId);
         Long callerId = currentUserProvider.getCurrentUser().getId();
         Long currentAssigneeId = existingIssue.getAssignee() != null ? existingIssue.getAssignee().getId() : null;
 

@@ -21,13 +21,13 @@ public class Issue extends Auditable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 100)
     private String title;
 
-    @Column
+    @Column(length = 1000)
     private String description;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private String type;
 
     @Column(nullable = false)

@@ -20,10 +20,10 @@ public class Label {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 30)
     private String name;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 30)
     private String color;
 
     @Column(nullable = false)

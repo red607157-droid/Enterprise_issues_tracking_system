@@ -94,9 +94,9 @@ public class IssueLabelService {
 
     private void checkCallerCanEdit(Long projectId, Issue issue) {
         Long callerId = currentUserProvider.getCurrentUser().getId();
-        boolean isManagerOrAdmin = projectMemberRepository.findMembership(projectId, callerId)
-                .map(member -> List.of(Role.ADMIN, Role.PROJECT_MANAGER).contains(member.getRole()))
-                .orElse(false);
+        ProjectMember membership = projectMemberRepository.findMembership(projectId, callerId)
+                .orElseThrow(() -> new AccessDeniedException("You are not allowed to do this"));
+        boolean isManagerOrAdmin = List.of(Role.ADMIN, Role.PROJECT_MANAGER).contains(membership.getRole());
         boolean isAssignee = issue.getAssignee() != null && callerId.equals(issue.getAssignee().getId());
         if (!isManagerOrAdmin && !isAssignee) {
             throw new AccessDeniedException("You are not allowed to do this");

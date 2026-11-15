@@ -20,13 +20,13 @@ public class Project extends Auditable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private String key;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private String name;
 
-    @Column
+    @Column(length = 100)
     private String description;
 
     @Column
