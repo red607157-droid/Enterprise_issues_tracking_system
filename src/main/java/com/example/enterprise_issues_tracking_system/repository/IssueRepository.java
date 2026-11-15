@@ -13,7 +13,7 @@ import java.util.Optional;
 public interface IssueRepository extends JpaRepository<Issue, Long>, JpaSpecificationExecutor<Issue> {
     Optional<Issue> findByIdAndDeletedAtIsNull(Long id);
 
-    @Query("SELECT i.issueStatus AND COUNT(i) FROM Issue i "+
+    @Query("SELECT i.issueStatus, COUNT(i) FROM Issue i "+
             "WHERE i.project.id = :projectId AND i.deletedAt IS NULL "+
             "GROUP BY i.issueStatus")
     List<Object[]> countByStatus(@Param("projectId") Long projectId);

@@ -37,7 +37,7 @@ public final class BurndownCalculator {
         State state = states.get(issueId);
         switch (event.action()) {
             case CREATED -> {
-                if (state == null) {
+                if (state != null) {
                     return Effect.None;
                 }
                 states.put(issueId, State.OPEN);
@@ -55,7 +55,7 @@ public final class BurndownCalculator {
                     states.put(issueId, State.DONE);
                     return new Effect(-1, false, true);
                 }
-                if (state == State.DONE && target.equals("DONE")) {
+                if (state == State.DONE && !target.equals("DONE")) {
                     states.put(issueId, State.OPEN);
                     return new Effect(1, false, false);
                 }

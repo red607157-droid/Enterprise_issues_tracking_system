@@ -27,7 +27,7 @@ import java.util.Map;
 public class DashboardService {
 
     static final int DEFAULT_BURNDOWN_DAYS = 14;
-    static final int MAX_BURNDOWN_DAYS = 27;
+    static final int MAX_BURNDOWN_DAYS = 92;
     static final String UNASSIGNED_NAME = "unassigned";
 
     private final ProjectRepository projectRepository;
@@ -77,7 +77,7 @@ public class DashboardService {
     public BurndownResponse getBurnDown(Long projectId, LocalDate fromParam, LocalDate toParam) {
         requireMember(projectId);
         LocalDate to = toParam != null ? toParam : LocalDate.now();
-        LocalDate from = fromParam != null ? fromParam : toParam.minusDays(DEFAULT_BURNDOWN_DAYS - 1);
+        LocalDate from = fromParam != null ? fromParam : to.minusDays(DEFAULT_BURNDOWN_DAYS - 1);
         if (from.isAfter(to)) {
             throw new InvalidRequestException("'from' must not be after 'to'");
         }

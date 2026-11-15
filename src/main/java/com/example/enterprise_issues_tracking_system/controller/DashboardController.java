@@ -19,7 +19,7 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
 
-    @GetMapping("/issue-by-status")
+    @GetMapping("/issues-by-status")
     public ResponseEntity<IssueByStatusResponse> getIssuesByProject(@PathVariable Long projectId) {
         return ResponseEntity.ok(dashboardService.getIssuesByProject(projectId));
     }
