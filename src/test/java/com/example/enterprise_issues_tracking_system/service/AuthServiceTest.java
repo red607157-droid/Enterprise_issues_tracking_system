@@ -86,6 +86,7 @@ class AuthServiceTest {
         String email = "end123@gmail.com";
         User user = new User();
         user.setPassword("hashedPassword123");
+        user.setUserStatus(UserStatus.ACTIVE);
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", "hashedPassword123")).thenReturn(true);
         when(jwtUtil.generateAccessToken(user)).thenReturn("fake-access-token");

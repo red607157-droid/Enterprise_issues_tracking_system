@@ -88,7 +88,6 @@ class NotificationServiceTest {
 
     @Test
     public void getMyNotifications_whenSortFieldNotAllowed_shouldThrowException() {
-        givenCaller();
 
         assertThrows(InvalidRequestException.class,
                 () -> notificationService.getMyNotifications(false, PageRequest.of(0, 10, Sort.by("message"))));

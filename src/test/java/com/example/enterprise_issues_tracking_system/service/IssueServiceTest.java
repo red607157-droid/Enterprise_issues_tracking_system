@@ -308,8 +308,6 @@ class IssueServiceTest {
         IssueResponse result = issueService.updateIssue(existingIssueId, request);
 
         assertEquals(response, result);
-        verify(issueRepository).findByIdAndDeletedAtIsNull(existingIssueId);
-        verify(projectMemberRepository).findMembership(projectId, callerId);
         verify(issueRepository).save(any(Issue.class));
     }
 

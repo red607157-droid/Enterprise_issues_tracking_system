@@ -28,7 +28,7 @@ public class DashboardService {
 
     static final int DEFAULT_BURNDOWN_DAYS = 14;
     static final int MAX_BURNDOWN_DAYS = 92;
-    static final String UNASSIGNED_NAME = "unassigned";
+    static final String UNASSIGNED_NAME = "Unassigned";
 
     private final ProjectRepository projectRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -68,7 +68,7 @@ public class DashboardService {
                     String name = assigneeId == null ? UNASSIGNED_NAME : (String) row[1];
                     long total = ((Number) row[2]).longValue();
                     long done = row[3] == null ? 0 : ((Number) row[3]).longValue();
-                    return new AssigneeWorkloadResponse(assigneeId, name, total, done);
+                    return new AssigneeWorkloadResponse(assigneeId, name, total,total - done);
                 })
                 .sorted(Comparator.comparing(AssigneeWorkloadResponse::open).reversed().thenComparing(AssigneeWorkloadResponse::assigneeName))
                 .toList();
