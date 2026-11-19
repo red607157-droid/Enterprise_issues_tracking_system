@@ -5,8 +5,10 @@ import com.example.enterprise_issues_tracking_system.dto.ProjectMemberResponse;
 import com.example.enterprise_issues_tracking_system.entity.*;
 import com.example.enterprise_issues_tracking_system.event.AuditEvent;
 import com.example.enterprise_issues_tracking_system.exception.DuplicateResourceException;
+import com.example.enterprise_issues_tracking_system.exception.InvalidRequestException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.ProjectMemberMapper;
+import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
 import com.example.enterprise_issues_tracking_system.repository.UserRepository;
@@ -32,6 +34,7 @@ public class ProjectMemberService {
     private final ProjectMemberMapper projectMemberMapper;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final IssueRepository issueRepository;
 
     public ProjectMemberResponse addMember(Long id, ProjectMemberRequest request) {
         Project project = findActiveProject(id);
@@ -56,6 +59,9 @@ public class ProjectMemberService {
     }
 
     public ProjectMemberResponse updateMember(Long id, Long userId, ProjectMemberRequest request) {
+        if (!Objects.equals(userId, request.getUserId())) {
+            throw new InvalidRequestException("User ID in the body must match the path");
+        }
         Project project = findActiveProject(id);
         Role callerRole = requireAdminOrManager(id);
         ProjectMember projectMember = findMember(id, userId);
@@ -76,6 +82,7 @@ public class ProjectMemberService {
         ProjectMember projectMember = findMember(id, userId);
         checkCanModifyTarget(callerRole, project, userId, projectMember);
         projectMemberRepository.delete(projectMember);
+        unassignIssues(id, userId);
         publish(AuditAction.DELETED, userId, id, "role " + projectMember.getRole());
     }
 
@@ -129,5 +136,14 @@ public class ProjectMemberService {
 
     private void publish(AuditAction action, Long userId, Long projectId, String details) {
         eventPublisher.publishEvent(new AuditEvent(AuditEntityType.PROJECT_MEMBER, userId, projectId, null, action, details));
+    }
+
+    private void unassignIssues(Long projectId, Long userId) {
+        for (Issue issue : issueRepository.findAllByProjectIdAndAssigneeIdAndDeletedAtIsNull(projectId, userId)) {
+            issue.setAssignee(null);
+            issueRepository.save(issue);
+            eventPublisher.publishEvent(new AuditEvent(AuditEntityType.ISSUE, issue.getId(), projectId,
+                    issue.getId(), AuditAction.ASSIGNEE_CHANGED, "assignee " + userId + " -> null"));
+        }
     }
 }

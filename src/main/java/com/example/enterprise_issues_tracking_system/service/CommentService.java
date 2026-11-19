@@ -5,6 +5,7 @@ import com.example.enterprise_issues_tracking_system.dto.CommentResponse;
 import com.example.enterprise_issues_tracking_system.dto.CommentUpdateRequest;
 import com.example.enterprise_issues_tracking_system.entity.*;
 import com.example.enterprise_issues_tracking_system.event.AuditEvent;
+import com.example.enterprise_issues_tracking_system.exception.InvalidRequestException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.CommentMapper;
 import com.example.enterprise_issues_tracking_system.repository.CommentRepository;
@@ -37,12 +38,12 @@ public class CommentService {
     private final ApplicationEventPublisher eventPublisher;
     private static final Set<String> SORTED_FIELDS = Set.of("id", "createdAt");
 
-    private void IsAMember(Long issueId) {
+    private ProjectMember IsAMember(Long issueId) {
         Long callerId = currentUserProvider.getCurrentUser().getId();
         Issue issue = issueRepository.findByIdAndDeletedAtIsNull(issueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Issue ID not found"));
         Long projectId = issue.getProject().getId();
-        ProjectMember projectMember = projectMemberRepository.findMembership(projectId, callerId)
+        return projectMemberRepository.findMembership(projectId, callerId)
                 .orElseThrow(() -> new AccessDeniedException("You are not allowed to do this"));
     }
 
@@ -59,6 +60,14 @@ public class CommentService {
         Issue issue = issueRepository.findByIdAndDeletedAtIsNull(request.getIssueId())
                         .orElseThrow(() -> new ResourceNotFoundException("Issue ID not found"));
         IsAMember(issue.getId());
+        Comment parent = null;
+        if (request.getParentCommentId() != null) {
+            parent = commentRepository.findByIdAndDeletedAtIsNull(request.getParentCommentId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Parent comment ID not found"));
+            if (!parent.getIssue().getId().equals(issue.getId())) {
+                throw new InvalidRequestException("Parent comment belongs to a different issue");
+            }
+        }
         User caller = currentUserProvider.getCurrentUser();
         Comment comment = commentMapper.toEntity(request);
         comment.setAuthor(caller);
@@ -87,6 +96,7 @@ public class CommentService {
         if (!IsAuthor(existingComment.getAuthor().getId())) {
             throw new AccessDeniedException("You are not allowed to do this");
         }
+        IsAMember(existingComment.getIssue().getId());
         Comment newComment = commentMapper.updateEntity(request, existingComment);
         commentRepository.save(newComment);
         return commentMapper.toResponse(newComment);
@@ -95,11 +105,9 @@ public class CommentService {
     public void deleteComment(Long id) {
         Comment comment = commentRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Comment ID not found"));
-        Long callerId = currentUserProvider.getCurrentUser().getId();
+        ProjectMember membership = IsAMember(comment.getIssue().getId());
         Long projectId = comment.getIssue().getProject().getId();
-        boolean isAdminOrManager = projectMemberRepository.findMembership(projectId, callerId)
-                .map(pm -> List.of(Role.ADMIN, Role.PROJECT_MANAGER).contains(pm.getRole()))
-                .orElse(false);
+        boolean isAdminOrManager = List.of(Role.ADMIN, Role.PROJECT_MANAGER).contains(membership.getRole());
         if (!(IsAuthor(comment.getAuthor().getId()) || isAdminOrManager)) {
             throw new AccessDeniedException("You are not allowed to do this");
         }

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -32,13 +33,27 @@ public class AuthService {
     private final UserMapper userMapper;
     private final RefreshTokenRepository refreshTokenRepository;
 
+    private String dummyHash;
+
+    private static String normalize(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String dummyHash() {
+        if (dummyHash == null) {
+            dummyHash = passwordEncoder.encode("not-a-real-password");
+        }
+        return dummyHash;
+    }
+
     public RegisterResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        String email = normalize(request.getEmail());
+        if (userRepository.existsByEmail(email)) {
             throw new DuplicateResourceException("Email has already been registered");
         }
 
         User user = User.builder()
-                .email(request.getEmail())
+                .email(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
                 .userStatus(UserStatus.ACTIVE)
@@ -48,8 +63,12 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE));
+        User user = userRepository.findByEmail(normalize(request.getEmail()))
+                .orElse(null);
+        if (user == null) {
+            passwordEncoder.matches(request.getPassword(), dummyHash());
+            throw new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE);
+        }
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE);
         }
@@ -69,24 +88,26 @@ public class AuthService {
         return response;
     }
 
+    @Transactional(noRollbackFor = InvalidCredentialsException.class)
     public RefreshResponse refresh(RefreshRequest request) {
         RefreshToken refreshToken = refreshTokenRepository.findById(request.getRefreshToken())
                 .orElseThrow(() -> new InvalidCredentialsException("Refresh token not found"));
         if (LocalDateTime.now().isAfter(refreshToken.getExpiredAt())) {
+            refreshTokenRepository.deleteByToken(refreshToken.getRefreshToken());
             throw new InvalidCredentialsException("Your refresh token has expired");
         }
         User user = refreshToken.getUser();
         checkAccountIsActive(user);
-
+        if (refreshTokenRepository.deleteByToken(refreshToken.getRefreshToken()) != 1) {
+            throw new InvalidCredentialsException("Refresh token not found");
+        }
         String accessToken = jwtUtil.generateAccessToken(user);
         String newRefreshToken = UUID.randomUUID().toString();
-        refreshTokenRepository.deleteById(refreshToken.getRefreshToken());
-        RefreshToken newRefreshTokenEntity = RefreshToken.builder()
+        refreshTokenRepository.save(RefreshToken.builder()
                 .refreshToken(newRefreshToken)
                 .expiredAt(LocalDateTime.now().plusMonths(1))
                 .user(user)
-                .build();
-        refreshTokenRepository.save(newRefreshTokenEntity);
+                .build());
         RefreshResponse response = new RefreshResponse();
         response.setAccessToken(accessToken);
         response.setRefreshToken(newRefreshToken);
@@ -94,9 +115,7 @@ public class AuthService {
     }
 
     public void logout(RefreshRequest request) {
-        RefreshToken refreshToken = refreshTokenRepository.findById(request.getRefreshToken())
-                .orElseThrow(() -> new InvalidCredentialsException("refresh token has already been logged out"));
-        refreshTokenRepository.deleteById(refreshToken.getRefreshToken());
+        refreshTokenRepository.deleteByToken(request.getRefreshToken());
     }
 
     private void checkAccountIsActive(User user) {

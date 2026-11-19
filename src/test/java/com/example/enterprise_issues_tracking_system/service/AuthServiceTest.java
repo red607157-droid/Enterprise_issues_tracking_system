@@ -82,6 +82,23 @@ class AuthServiceTest {
     }
 
     @Test
+    public void register_whenEmailHasUppercase_shouldStoreItLowercased() {
+        when(userRepository.existsByEmail("ana@x.com")).thenReturn(false);
+        when(passwordEncoder.encode("secret123")).thenReturn("hashed");
+        when(userMapper.toResponse(any(User.class))).thenReturn(new RegisterResponse());
+        RegisterRequest request = new RegisterRequest();
+        request.setEmail("  Ana@X.com ");
+        request.setPassword("secret123");
+        request.setFullName("Ana");
+
+        authService.register(request);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertEquals("ana@x.com", captor.getValue().getEmail());
+    }
+
+    @Test
     public void login_whenEmailAlreadyExists_shouldCreateToken() {
         String email = "end123@gmail.com";
         User user = new User();
@@ -111,13 +128,15 @@ class AuthServiceTest {
         request.setPassword("password123");
 
         assertThrows(RuntimeException.class, () -> authService.login(request));
-        verify(passwordEncoder, never()).matches(any(), any());
+        verify(passwordEncoder).matches(eq("password123"), any());
+        verify(jwtUtil, never()).generateAccessToken(any());
     }
 
     @Test
     public void login_whenPasswordWrong_shouldThrowException() {
         String email = "end123@gmail.com";
         User user = new User();
+        user.setPassword("hashedPassword123");
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", "hashedPassword123")).thenReturn(false);
 
@@ -155,7 +174,7 @@ class AuthServiceTest {
         user.setUserStatus(UserStatus.ACTIVE);
         when(userRepository.findByEmail("known@gmail.com")).thenReturn(Optional.of(user));
         when(userRepository.findByEmail("unknown@gmail.com")).thenReturn(Optional.empty());
-        when(passwordEncoder.matches("wrong", "hashed")).thenReturn(false);
+        when(passwordEncoder.matches(eq("wrong"), any())).thenReturn(false);
 
         LoginRequest wrongPassword = new LoginRequest();
         wrongPassword.setEmail("known@gmail.com");
@@ -182,6 +201,8 @@ class AuthServiceTest {
                 .build();
         when(refreshTokenRepository.findById("old-token")).thenReturn(Optional.of(stored));
         when(jwtUtil.generateAccessToken(user)).thenReturn("new-access-token");
+        when(refreshTokenRepository.deleteByToken("old-token")).thenReturn(1);
+
 
         RefreshRequest request = new RefreshRequest();
         request.setRefreshToken("old-token");
@@ -190,7 +211,7 @@ class AuthServiceTest {
         assertEquals("new-access-token", result.getAccessToken());
         assertNotNull(result.getRefreshToken());
         assertNotEquals("old-token", result.getRefreshToken());
-        verify(refreshTokenRepository).deleteById("old-token");
+        verify(refreshTokenRepository).deleteByToken("old-token");
         verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
 
@@ -221,6 +242,7 @@ class AuthServiceTest {
 
         assertThrows(InvalidCredentialsException.class, () -> authService.refresh(request));
         verify(jwtUtil, never()).generateAccessToken(any());
+        verify(refreshTokenRepository).deleteByToken("expired-token");
         verify(refreshTokenRepository, never()).save(any());
     }
 
@@ -241,6 +263,45 @@ class AuthServiceTest {
         assertThrows(AccessDeniedException.class, () -> authService.refresh(request));
         verify(jwtUtil, never()).generateAccessToken(any());
         verify(refreshTokenRepository, never()).save(any());
+    }
+
+    @Test
+    public void refresh_whenTokenAlreadyUsedByAConcurrentRequest_shouldThrowException() {
+        User user = new User();
+        user.setUserStatus(UserStatus.ACTIVE);
+        RefreshToken stored = RefreshToken.builder()
+                .refreshToken("old-token")
+                .expiredAt(LocalDateTime.now().plusDays(1))
+                .user(user)
+                .build();
+        when(refreshTokenRepository.findById("old-token")).thenReturn(Optional.of(stored));
+        when(refreshTokenRepository.deleteByToken("old-token")).thenReturn(0);
+
+        RefreshRequest request = new RefreshRequest();
+        request.setRefreshToken("old-token");
+
+        assertThrows(InvalidCredentialsException.class, () -> authService.refresh(request));
+        verify(jwtUtil, never()).generateAccessToken(any());
+        verify(refreshTokenRepository, never()).save(any());
+    }
+
+    @Test
+    public void logout_shouldDeleteTheToken() {
+        RefreshRequest request = new RefreshRequest();
+        request.setRefreshToken("abc");
+
+        authService.logout(request);
+
+        verify(refreshTokenRepository).deleteByToken("abc");
+    }
+
+    @Test
+    public void logout_whenTokenUnknown_shouldNotThrow() {
+        when(refreshTokenRepository.deleteByToken("unknown")).thenReturn(0);
+        RefreshRequest request = new RefreshRequest();
+        request.setRefreshToken("unknown");
+
+        assertDoesNotThrow(() -> authService.logout(request));
     }
 
 }

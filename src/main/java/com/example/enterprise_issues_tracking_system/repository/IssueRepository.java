@@ -23,4 +23,6 @@ public interface IssueRepository extends JpaRepository<Issue, Long>, JpaSpecific
             "WHERE i.project.id = :projectId AND i.deletedAt IS NULL " +
             "GROUP BY a.id, a.fullName")
     List<Object[]> countByAssignee(@Param("projectId") Long projectId, @Param("done")IssueStatus done);
+
+    List<Issue> findAllByProjectIdAndAssigneeIdAndDeletedAtIsNull(Long projectId, Long assigneeId);
 }

@@ -66,6 +66,54 @@ class CommentServiceTest {
         return member;
     }
 
+    private void givenMemberOfIssue(Issue issue, Long callerId) {
+        User caller = new User();
+        caller.setId(callerId);
+        when(issueRepository.findByIdAndDeletedAtIsNull(issue.getId())).thenReturn(Optional.of(issue));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectMemberRepository.findMembership(issue.getProject().getId(), callerId))
+                .thenReturn(Optional.of(buildMembership(issue.getProject().getId(), callerId, Role.DEVELOPER)));
+    }
+
+    @Test
+    public void createComment_whenParentBelongsToAnotherIssue_shouldThrowException() {
+        Project project = new Project();
+        project.setId(3L);
+        Issue issue = new Issue();
+        issue.setId(1L);
+        issue.setProject(project);
+        Issue otherIssue = new Issue();
+        otherIssue.setId(99L);
+        Comment parent = new Comment();
+        parent.setId(8L);
+        parent.setIssue(otherIssue);
+        givenMemberOfIssue(issue, 2L);
+        when(commentRepository.findByIdAndDeletedAtIsNull(8L)).thenReturn(Optional.of(parent));
+        CommentRequest request = new CommentRequest();
+        request.setIssueId(1L);
+        request.setParentCommentId(8L);
+
+        assertThrows(InvalidRequestException.class, () -> commentService.createComment(request));
+        verify(commentRepository, never()).save(any());
+    }
+
+    @Test
+    public void createComment_whenParentNotFound_shouldThrowException() {
+        Project project = new Project();
+        project.setId(3L);
+        Issue issue = new Issue();
+        issue.setId(1L);
+        issue.setProject(project);
+        givenMemberOfIssue(issue, 2L);
+        when(commentRepository.findByIdAndDeletedAtIsNull(8L)).thenReturn(Optional.empty());
+        CommentRequest request = new CommentRequest();
+        request.setIssueId(1L);
+        request.setParentCommentId(8L);
+
+        assertThrows(ResourceNotFoundException.class, () -> commentService.createComment(request));
+        verify(commentRepository, never()).save(any());
+    }
+
     @Test
     public void createComment_whenAuthorized_shouldCreate() {
         Long callerId = 2L;
@@ -280,27 +328,35 @@ class CommentServiceTest {
         Long callerId = 2L;
         User caller = new User();
         caller.setId(callerId);
-        String body = "John can fix this issue";
+        Long projectId = 3L;
+        Project project = new Project();
+        project.setId(projectId);
+        Long issueId = 4L;
+        Issue issue = new Issue();
+        issue.setId(issueId);
+        issue.setProject(project);
         Long existingCommentId = 1L;
         Comment existingComment = new Comment();
         existingComment.setId(existingCommentId);
         existingComment.setBody("this issue can be fixed quickly");
         existingComment.setAuthor(caller);
+        existingComment.setIssue(issue);
         CommentUpdateRequest request = new CommentUpdateRequest();
-        request.setBody(body);
+        request.setBody("John can fix this issue");
         Comment newComment = new Comment();
         newComment.setId(existingCommentId);
-        newComment.setBody(body);
+        newComment.setBody("John can fix this issue");
         newComment.setAuthor(caller);
         CommentResponse response = new CommentResponse();
         response.setId(existingCommentId);
-        response.setBody(body);
-        response.setAuthorId(callerId);
 
         when(commentRepository.findByIdAndDeletedAtIsNull(existingCommentId)).thenReturn(Optional.of(existingComment));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
+        when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
         when(commentMapper.updateEntity(request, existingComment)).thenReturn(newComment);
         when(commentMapper.toResponse(newComment)).thenReturn(response);
+
         CommentResponse result = commentService.updateComment(existingCommentId, request);
 
         assertEquals(response, result);
@@ -329,6 +385,54 @@ class CommentServiceTest {
     }
 
     @Test
+    public void updateComment_whenAuthorIsNoLongerAMember_shouldThrowException() {
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+        Project project = new Project();
+        project.setId(3L);
+        Issue issue = new Issue();
+        issue.setId(4L);
+        issue.setProject(project);
+        Comment comment = new Comment();
+        comment.setId(1L);
+        comment.setAuthor(caller);
+        comment.setIssue(issue);
+
+        when(commentRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(comment));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(issueRepository.findByIdAndDeletedAtIsNull(4L)).thenReturn(Optional.of(issue));
+        when(projectMemberRepository.findMembership(3L, callerId)).thenReturn(Optional.empty());
+
+        assertThrows(AccessDeniedException.class, () -> commentService.updateComment(1L, new CommentUpdateRequest()));
+        verify(commentRepository, never()).save(any());
+    }
+
+    @Test
+    public void deleteComment_whenAuthorIsNoLongerAMember_shouldThrowException() {
+        Long callerId = 2L;
+        User caller = new User();
+        caller.setId(callerId);
+        Project project = new Project();
+        project.setId(3L);
+        Issue issue = new Issue();
+        issue.setId(5L);
+        issue.setProject(project);
+        Comment comment = new Comment();
+        comment.setId(1L);
+        comment.setAuthor(caller);
+        comment.setIssue(issue);
+
+        when(commentRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(comment));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(issueRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(Optional.of(issue));
+        when(projectMemberRepository.findMembership(3L, callerId)).thenReturn(Optional.empty());
+
+        assertThrows(AccessDeniedException.class, () -> commentService.deleteComment(1L));
+        verify(commentRepository, never()).save(any());
+    }
+
+    @Test
     public void deleteComment_whenCallerIsAdmin_shouldDelete() {
         Long projectId = 3L;
         Project project = new Project();
@@ -350,6 +454,7 @@ class CommentServiceTest {
 
         when(commentRepository.findByIdAndDeletedAtIsNull(commentId)).thenReturn(Optional.of(comment));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(issueRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(Optional.of(issue));
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.ADMIN)));
         commentService.deleteComment(commentId);
 
@@ -375,6 +480,7 @@ class CommentServiceTest {
 
         when(commentRepository.findByIdAndDeletedAtIsNull(commentId)).thenReturn(Optional.of(comment));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(issueRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(Optional.of(issue));
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
         commentService.deleteComment(commentId);
 
@@ -403,6 +509,7 @@ class CommentServiceTest {
 
         when(commentRepository.findByIdAndDeletedAtIsNull(commentId)).thenReturn(Optional.of(comment));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(issueRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(Optional.of(issue));
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.empty());
 
         assertThrows(AccessDeniedException.class, () -> commentService.deleteComment(commentId));

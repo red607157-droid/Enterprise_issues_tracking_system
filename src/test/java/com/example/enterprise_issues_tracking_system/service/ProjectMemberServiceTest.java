@@ -3,9 +3,12 @@ package com.example.enterprise_issues_tracking_system.service;
 import com.example.enterprise_issues_tracking_system.dto.ProjectMemberRequest;
 import com.example.enterprise_issues_tracking_system.dto.ProjectMemberResponse;
 import com.example.enterprise_issues_tracking_system.entity.*;
+import com.example.enterprise_issues_tracking_system.event.AuditEvent;
 import com.example.enterprise_issues_tracking_system.exception.DuplicateResourceException;
+import com.example.enterprise_issues_tracking_system.exception.InvalidRequestException;
 import com.example.enterprise_issues_tracking_system.exception.ResourceNotFoundException;
 import com.example.enterprise_issues_tracking_system.mapper.ProjectMemberMapper;
+import com.example.enterprise_issues_tracking_system.repository.IssueRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectMemberRepository;
 import com.example.enterprise_issues_tracking_system.repository.ProjectRepository;
 import com.example.enterprise_issues_tracking_system.repository.UserRepository;
@@ -13,12 +16,14 @@ import com.example.enterprise_issues_tracking_system.security.CurrentUserProvide
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -49,6 +54,9 @@ class ProjectMemberServiceTest {
 
     @Mock
     private CurrentUserProvider currentUserProvider;
+
+    @Mock
+    private IssueRepository issueRepository;
 
     @InjectMocks
     private ProjectMemberService projectMemberService;
@@ -207,8 +215,6 @@ class ProjectMemberServiceTest {
         verify(projectMemberRepository, never()).findMembership(any(), any());
     }
 
-    // ---------- updateMember ----------
-
     @Test
     public void updateMember_whenAuthorized_shouldUpdateRole() {
         ProjectMember target = buildMembership(project, buildUser(TARGET_ID), Role.DEVELOPER);
@@ -255,7 +261,12 @@ class ProjectMemberServiceTest {
         verify(projectMemberRepository, never()).save(any());
     }
 
-    // ---------- deleteMember ----------
+    @Test
+    public void updateMember_whenBodyUserIdDiffersFromPath_shouldThrowException() {
+        assertThrows(InvalidRequestException.class,
+                () -> projectMemberService.updateMember(PROJECT_ID, TARGET_ID, buildRequest(99L, Role.DEVELOPER)));
+        verify(projectMemberRepository, never()).save(any());
+    }
 
     @Test
     public void deleteMember_whenAuthorized_shouldDelete() {
@@ -292,5 +303,29 @@ class ProjectMemberServiceTest {
 
         assertThrows(AccessDeniedException.class, () -> projectMemberService.deleteMember(PROJECT_ID, TARGET_ID));
         verify(projectMemberRepository, never()).delete(any());
+    }
+
+    @Test
+    public void deleteMember_shouldUnassignTheirIssuesInThatProject() {
+        User target = buildUser(TARGET_ID);
+        ProjectMember membership = buildMembership(project, target, Role.DEVELOPER);
+        Issue issue = new Issue();
+        issue.setId(7L);
+        issue.setAssignee(target);
+
+        givenActiveProject();
+        givenCallerRole(Role.ADMIN);
+        when(projectMemberRepository.findMembership(PROJECT_ID, TARGET_ID)).thenReturn(Optional.of(membership));
+        when(issueRepository.findAllByProjectIdAndAssigneeIdAndDeletedAtIsNull(PROJECT_ID, TARGET_ID))
+                .thenReturn(List.of(issue));
+
+        projectMemberService.deleteMember(PROJECT_ID, TARGET_ID);
+
+        assertNull(issue.getAssignee());
+        verify(issueRepository).save(issue);
+        ArgumentCaptor<AuditEvent> captor = ArgumentCaptor.forClass(AuditEvent.class);
+        verify(eventPublisher, times(2)).publishEvent(captor.capture());
+        assertEquals(AuditAction.ASSIGNEE_CHANGED, captor.getAllValues().get(0).action());
+        assertEquals(7L, captor.getAllValues().get(0).issueId());
     }
 }

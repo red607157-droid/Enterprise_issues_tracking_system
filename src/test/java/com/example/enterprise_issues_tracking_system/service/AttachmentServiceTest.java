@@ -123,6 +123,31 @@ class AttachmentServiceTest {
     }
 
     @Test
+    public void createAttachment_whenFilenameIsNullOrHuge_shouldStillStoreWithBoundedKey() throws IOException {
+        Project project = new Project();
+        project.setId(2L);
+        Issue issue = new Issue();
+        issue.setId(1L);
+        issue.setProject(project);
+        User caller = new User();
+        caller.setId(3L);
+        byte[] content = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0, 0, 0};
+        when(issueRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(issue));
+        when(projectRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(project));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectMemberRepository.findMembership(2L, 3L)).thenReturn(Optional.of(buildMembership(2L, 3L, Role.DEVELOPER)));
+
+        attachmentService.createAttachment(content, null, 1L);
+        attachmentService.createAttachment(content, "../../" + "a".repeat(300) + ".jpg", 1L);
+
+        ArgumentCaptor<String> keys = ArgumentCaptor.forClass(String.class);
+        verify(fileStorageService, times(2)).store(keys.capture(), eq(content));
+        assertTrue(keys.getAllValues().get(0).endsWith("-file"));
+        assertTrue(keys.getAllValues().get(1).length() < 500);
+        assertFalse(keys.getAllValues().get(1).contains(".."));
+    }
+
+    @Test
     public void createAttachment_whenEmptyFile_shouldThrowException() throws IOException {
         Long projectId = 2L;
         Project project = new Project();
@@ -455,6 +480,7 @@ class AttachmentServiceTest {
         attachment.setIssue(issue);
 
         when(attachmentRepository.findByIdAndDeletedAtIsNull(attachmentId)).thenReturn(Optional.of(attachment));
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.ADMIN)));
@@ -486,6 +512,7 @@ class AttachmentServiceTest {
         attachment.setIssue(issue);
 
         when(attachmentRepository.findByIdAndDeletedAtIsNull(attachmentId)).thenReturn(Optional.of(attachment));
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.PROJECT_MANAGER)));
@@ -514,6 +541,7 @@ class AttachmentServiceTest {
         attachment.setIssue(issue);
 
         when(attachmentRepository.findByIdAndDeletedAtIsNull(attachmentId)).thenReturn(Optional.of(attachment));
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
@@ -545,6 +573,7 @@ class AttachmentServiceTest {
         attachment.setIssue(issue);
 
         when(attachmentRepository.findByIdAndDeletedAtIsNull(attachmentId)).thenReturn(Optional.of(attachment));
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.empty());
@@ -578,6 +607,7 @@ class AttachmentServiceTest {
         attachment.setIssue(issue);
 
         when(attachmentRepository.findByIdAndDeletedAtIsNull(attachmentId)).thenReturn(Optional.of(attachment));
+        when(issueRepository.findByIdAndDeletedAtIsNull(issue.getId())).thenReturn(Optional.of(issue));
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> attachmentService.deleteAttachment(attachmentId));
@@ -607,11 +637,40 @@ class AttachmentServiceTest {
         attachment.setIssue(issue);
 
         when(attachmentRepository.findByIdAndDeletedAtIsNull(attachmentId)).thenReturn(Optional.of(attachment));
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
         when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
         when(currentUserProvider.getCurrentUser()).thenReturn(caller);
         when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.of(buildMembership(projectId, callerId, Role.DEVELOPER)));
 
         assertThrows(AccessDeniedException.class, () -> attachmentService.deleteAttachment(attachmentId));
+        assertNull(attachment.getDeletedAt());
+        verify(attachmentRepository, never()).save(any());
+    }
+
+    @Test
+    public void deleteAttachment_whenUploaderIsNoLongerAMember_shouldThrowException() {
+        Long projectId = 2L;
+        Project project = new Project();
+        project.setId(projectId);
+        Long issueId = 4L;
+        Issue issue = new Issue();
+        issue.setId(issueId);
+        issue.setProject(project);
+        Long callerId = 3L;
+        User caller = new User();
+        caller.setId(callerId);
+        Attachment attachment = new Attachment();
+        attachment.setId(1L);
+        attachment.setUploadedBy(caller);
+        attachment.setIssue(issue);
+
+        when(attachmentRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(attachment));
+        when(issueRepository.findByIdAndDeletedAtIsNull(issueId)).thenReturn(Optional.of(issue));
+        when(projectRepository.findByIdAndDeletedAtIsNull(projectId)).thenReturn(Optional.of(project));
+        when(currentUserProvider.getCurrentUser()).thenReturn(caller);
+        when(projectMemberRepository.findMembership(projectId, callerId)).thenReturn(Optional.empty());
+
+        assertThrows(AccessDeniedException.class, () -> attachmentService.deleteAttachment(1L));
         assertNull(attachment.getDeletedAt());
         verify(attachmentRepository, never()).save(any());
     }

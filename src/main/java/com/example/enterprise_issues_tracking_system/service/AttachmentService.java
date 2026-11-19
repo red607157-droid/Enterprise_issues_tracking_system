@@ -13,6 +13,7 @@ import com.example.enterprise_issues_tracking_system.repository.ProjectRepositor
 import com.example.enterprise_issues_tracking_system.security.CurrentUserProvider;
 import com.example.enterprise_issues_tracking_system.util.PageableValidator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -20,6 +21,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,6 +34,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class AttachmentService {
 
     private final IssueRepository issueRepository;
@@ -61,6 +65,41 @@ public class AttachmentService {
         eventPublisher.publishEvent(new AuditEvent(AuditEntityType.ATTACHMENT, attachmentId, projectId, issueId, action, filename));
     }
 
+    private static String displayName(String original) {
+        String name = original == null ? "" : original.replace('\\', '/');
+        name = name.substring(name.lastIndexOf('/') + 1).trim();
+        if (name.isEmpty()) {
+            name = "file";
+        }
+        return name.length() > 255 ? name.substring(name.length() - 255) : name;
+    }
+
+    private static String storageName(String displayName) {
+        String safe = displayName.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (safe.chars().allMatch(c -> c == '.')) {
+            safe = "file";
+        }
+        return safe.length() > 100 ? safe.substring(safe.length() - 100) : safe;
+    }
+
+    private void deleteFileIfTransactionFails(String storageKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    try {
+                        fileStorageService.delete(storageKey);
+                    } catch (IOException e) {
+                        log.warn("Could not remove orphaned file {}", storageKey, e);
+                    }
+                }
+            }
+        });
+    }
+
     public AttachmentResponse createAttachment(byte[] content, String originFileName, Long issueId) throws IOException {
         Issue issue = IsMember(issueId);
         if (content.length == 0) {
@@ -73,12 +112,13 @@ public class AttachmentService {
         if (!ALLOWED_TYPES.contains(detectedFile)) {
             throw new InvalidFileException("File type is not allowed");
         }
-        String safeName = Paths.get(originFileName).getFileName().toString();
-        String storageKey = "issues/" + issueId + "/attachments/" + UUID.randomUUID() + "-" + safeName;
+        String shownName = displayName(originFileName);
+        String storageKey = "issues/" + issueId + "/attachments/" + UUID.randomUUID() + "-" + storageName(shownName);
         fileStorageService.store(storageKey, content);
+        deleteFileIfTransactionFails(storageKey);
         Attachment attachment = Attachment.builder()
                 .fileSize((long) content.length)
-                .originalFilename(originFileName)
+                .originalFilename(shownName)
                 .contentType(detectedFile)
                 .issue(issue)
                 .storageKey(storageKey)
@@ -114,6 +154,7 @@ public class AttachmentService {
     public void deleteAttachment(Long id) {
         Attachment attachment = attachmentRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Attachment ID not found"));
+        IsMember(attachment.getIssue().getId());
         Long projectId = attachment.getIssue().getProject().getId();
         projectRepository.findByIdAndDeletedAtIsNull(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project ID not found"));

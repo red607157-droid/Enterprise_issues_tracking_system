@@ -13,6 +13,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -88,6 +89,17 @@ class AuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{not json"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void register_whenDatabaseRejectsDuplicate_shouldReturn409() throws Exception {
+        when(authService.register(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        mockMvc.perform(post("/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {"email":"a@x.com","password":"secret123","fullName":"Ana"}"""))
+                .andExpect(status().isConflict());
     }
 
     @Test
